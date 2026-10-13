@@ -3,20 +3,10 @@
 import SupportTicketsUI from '@/components/ui/SupportTicketsUI';
 import { generateTicketID } from '@/helpers/generateRandomID';
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { db } from '@/lib/firebase';
-import { Ticket, TicketPriority, TicketStatus } from '@/types/supportTicket';
+import { apiFetch } from '@/lib/api-client';
+import { Ticket, TicketPriority } from '@/types/supportTicket';
 import { downloadTicketPDF } from '@/utils/download-pdf';
-import { computeOverdue } from '@/utils/ticketSLA';
-import {
-    collection,
-    doc,
-    getDocs,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    where,
-} from 'firebase/firestore';
+import { toJsDate } from '@/utils/toJSDate';
 import { useRouter } from 'next/navigation';
 import React from 'react';
 import { toast } from 'sonner';
@@ -51,39 +41,21 @@ const SupportTickets = () => {
 
         setSubmittingTicket(true);
         try {
-            const id =
-                ticketID ||
-                'TICKET-' +
-                    Math.random().toString(36).substr(2, 9).toUpperCase();
-
-            const status: TicketStatus = 'open';
-            const updatedAt = new Date();
-
-            const ticket: Ticket = {
-                id,
-                title: title.trim(),
-                message: message.trim(),
-                createdAt: new Date(),
-                email: user?.email || '',
-                userId: user?.uid || '',
-                status,
-                priority,
-                userName: user?.fullname || 'Anonymous',
-                updatedAt,
-                overdue: computeOverdue(
-                    updatedAt.toISOString(),
+            const response = await apiFetch('/api/academy/mobile/support-tickets', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: title.trim(),
+                    message: message.trim(),
                     priority,
-                    status,
-                ),
-                hasAgentReply: false,
-                lastAgentReplyAt: null,
-            };
-
-            const ticketRef = doc(db, 'support-tickets', id);
-            await setDoc(ticketRef, {
-                ...ticket,
-                updatedAtServer: serverTimestamp(),
+                    requestedId: ticketID || undefined,
+                }),
             });
+            const result = (await response.json()) as { ticket: Ticket };
+            const ticket = {
+                ...result.ticket,
+                createdAt: new Date(result.ticket.createdAt || Date.now()),
+                updatedAt: new Date(result.ticket.updatedAt || Date.now()),
+            };
 
             toast.success('Ticket submitted successfully!', {
                 description:
@@ -113,19 +85,19 @@ const SupportTickets = () => {
 
         const fetchTickets = async () => {
             try {
-                const q = query(
-                    collection(db, 'support-tickets'),
-                    where('email', '==', user.email),
-                    orderBy('createdAt', 'desc'),
+                const response = await apiFetch(
+                    '/api/academy/mobile/support-tickets',
                 );
-
-                const snapshot = await getDocs(q);
-                const tickets: Ticket[] = snapshot.docs.map((doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
-                })) as Ticket[];
-
-                setUserTickets(tickets);
+                const result = (await response.json()) as {
+                    tickets: Array<Ticket & { createdAt: string; updatedAt: string }>;
+                };
+                setUserTickets(
+                    result.tickets.map((ticket) => ({
+                        ...ticket,
+                        createdAt: toJsDate(ticket.createdAt),
+                        updatedAt: toJsDate(ticket.updatedAt),
+                    })),
+                );
             } catch (error) {
                 console.error('Error fetching tickets:', error);
             } finally {

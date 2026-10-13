@@ -4,14 +4,14 @@ export type Ticket = {
     id: string;
     title: string;
     message: string;
-    createdAt: Date | null;
+    createdAt: Date | string | number | null;
     email: string;
     userId: string;
     status: TicketStatus;
     priority: TicketPriority;
     userName: string;
-    updatedAt: Date | null;
+    updatedAt: Date | string | number | null;
     overdue?: boolean;
     hasAgentReply?: boolean;
-    lastAgentReplyAt?: Date | null;
+    lastAgentReplyAt?: Date | string | number | null;
 };

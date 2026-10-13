@@ -20,6 +20,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { User } from '@/types/user';
+import { toJsDate } from '@/utils/toJSDate';
 import {
     Brain,
     CalendarDays,
@@ -167,18 +168,18 @@ const ProfileTabUI = ({
         : ['Anonymous'];
 
     const createdDate = user.createdAt
-        ? user.createdAt.toDate().toLocaleDateString()
+        ? toJsDate(user.createdAt)?.toLocaleDateString() || 'N/A'
         : 'N/A';
 
     const subscription = user.subscriptionStatus
         ? user.subscriptionStatus.toUpperCase()
         : 'N/A';
     const lastLogin = user.lastLogin
-        ? user.lastLogin.toDate().toLocaleString()
+        ? toJsDate(user.lastLogin)?.toLocaleString() || 'N/A'
         : 'N/A';
 
     const memberUntil = user.memberUntil
-        ? user.memberUntil.toDate().toLocaleDateString()
+        ? toJsDate(user.memberUntil)?.toLocaleDateString() || 'N/A'
         : 'N/A';
 
     const copyToClipboard = async (label: string, value: string) => {

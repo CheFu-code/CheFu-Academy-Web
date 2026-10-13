@@ -4,8 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { db } from '@/lib/firebase';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { apiFetch } from '@/lib/api-client';
 import {
     BookOpenCheck,
     Compass,
@@ -140,15 +139,12 @@ export default function AppGuideOnboarding() {
     const handleDone = async () => {
         setSaving(true);
         try {
-            await setDoc(
-                doc(db, 'users', user.email),
-                {
+            await apiFetch('/api/academy/mobile/me', {
+                method: 'PATCH',
+                body: JSON.stringify({
                     appGuideComplete: true,
-                    appGuideCompletedAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
-                },
-                { merge: true },
-            );
+                }),
+            });
             setCompletedLocally(true);
             toast.success('Guide completed. You are all set.');
         } catch (error) {

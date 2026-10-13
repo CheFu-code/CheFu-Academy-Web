@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { auth } from '@/lib/firebase';
+import { useAuthUser } from '@/hooks/useAuthUser';
 import { getApiUrl } from '@/lib/api-url';
 import { loadClerkBilling } from '@/lib/clerk-billing';
 import { BillingCheckoutResponse } from '@/types/billing';
@@ -16,25 +16,22 @@ type PricingCheckoutButtonProps = {
 
 const PricingCheckoutButton = ({ planName }: PricingCheckoutButtonProps) => {
     const router = useRouter();
+    const { user, loading: authLoading } = useAuthUser();
     const [loading, setLoading] = useState(false);
 
     const startCheckout = async () => {
         setLoading(true);
 
         try {
-            const firebaseUser = auth.currentUser;
-
-            if (!firebaseUser) {
+            if (authLoading || !user) {
                 router.push('/login');
                 return;
             }
 
-            const token = await firebaseUser.getIdToken();
             const response = await fetch(getApiUrl('/billing/checkout'), {
                 body: JSON.stringify({ plan: planName }),
                 credentials: 'include',
                 headers: {
-                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
                 method: 'POST',

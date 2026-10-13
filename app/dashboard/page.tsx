@@ -360,6 +360,20 @@ export default async function DashboardPage() {
 
 function formatDashboardDate(value: unknown) {
     if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        value instanceof Date
+    ) {
+        const date = new Date(value);
+        if (!Number.isNaN(date.getTime())) {
+            return date.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+            });
+        }
+    }
+    if (
         value &&
         typeof value === 'object' &&
         'toDate' in value &&

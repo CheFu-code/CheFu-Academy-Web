@@ -1,209 +1,137 @@
+import { useAuthUser } from '@/hooks/useAuthUser';
+import { getApiUrl } from '@/lib/api-url';
 import { Course } from '@/types/course';
-import {
-    collection,
-    doc,
-    DocumentData,
-    getDoc,
-    getDocs,
-    limit,
-    orderBy,
-    query,
-    QueryDocumentSnapshot,
-    startAfter,
-    where,
-} from 'firebase/firestore';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
-import { auth, db } from '../firebase';
+
+type CourseListResponse = {
+    courses: Course[];
+    nextCursor: string | null;
+    total: number;
+};
 
 const isCanonicalCourse = (course: Course) =>
     !course.enrolled && !course.originalCourseId;
 
+async function fetchCourseList(path: string) {
+    const response = await fetch(getApiUrl(path), { credentials: 'include' });
+    if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+            | { message?: string; error?: string }
+            | null;
+        throw new Error(
+            data?.message || data?.error || 'Failed to load courses.',
+        );
+    }
+    return (await response.json()) as CourseListResponse;
+}
+
 export const CoursesQuery = () => {
-    const courseRef = collection(db, 'course');
-    const [user, setUser] = useState(auth.currentUser);
+    const { user } = useAuthUser();
     const [courses, setCourses] = useState<Course[]>([]);
     const [fetchingCourses, setFetchingCourses] = useState(true);
     const [fetchingCourseById, setFetchingCourseById] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
-    const [lastDoc, setLastDoc] =
-        useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [hasMore, setHasMore] = useState(true);
-
-    useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged(u => {
-            setUser(u);
-        });
-        return () => unsubscribe();
-    }, []);
 
     const fetchCourses = useCallback(async () => {
         if (!user?.email) {
             setCourses([]);
+            setNextCursor(null);
+            setHasMore(false);
+            setFetchingCourses(false);
             return;
         }
 
         setFetchingCourses(true);
-
         try {
-            // Fetch initial batch, slightly larger in case we filter some
-            const q = query(
-                courseRef,
-                orderBy('createdOn', 'desc'),
-                limit(10)
+            const result = await fetchCourseList(
+                '/api/academy/mobile/courses?limit=10',
             );
-
-            const snapshot = await getDocs(q);
-
-            // Map docs and filter out courses created by the user
-            const allCourses = snapshot.docs
-                .map((doc) => ({ ...(doc.data() as Course), id: doc.id }))
-                .filter(
-                    (course) =>
-                        isCanonicalCourse(course) &&
-                        course.createdBy !== user.email,
-                );
-
-            // Fetch user's enrolled courses
-            const enrolledQ = query(
-                courseRef,
-                where('createdBy', '==', user.email),
-                where('originalCourseId', '!=', null)
+            const visibleCourses = result.courses.filter(
+                course =>
+                    isCanonicalCourse(course) &&
+                    course.createdBy?.toLowerCase() !== user.email.toLowerCase(),
             );
-            const enrolledSnap = await getDocs(enrolledQ);
-
-            const enrolledOriginalIds = enrolledSnap.docs.map((doc) => {
-                const data = doc.data() as Course;
-                return data.originalCourseId ?? doc.id;
-            });
-
-            // Filter out courses the user is already enrolled in
-            const freshData = allCourses.filter(
-                (course) => !enrolledOriginalIds.includes(course.id),
-            );
-
-            setCourses(freshData);
-            setLastDoc(snapshot.docs.at(-1) ?? null);
-
-            // Determine if there might be more courses to fetch
-            setHasMore(snapshot.docs.length >= 10 && freshData.length > 0);
-
+            setCourses(visibleCourses);
+            setNextCursor(result.nextCursor);
+            setHasMore(Boolean(result.nextCursor));
         } catch (error) {
+            console.error('Failed to load courses:', error);
             toast.error('Failed to load courses.');
-            alert(`Error fetching courses: ${error}`);
         } finally {
             setFetchingCourses(false);
         }
-    }, [user?.email, courseRef]);
+    }, [user?.email]);
 
-
-    const fetchSearchedCourses = useCallback(async (): Promise<Course[]> => {
-        const q = query(
-            collection(db, 'course'),
-            orderBy('createdOn', 'desc'),
-        );
-
-        const snap = await getDocs(q);
-        return snap.docs
-            .map((doc) => ({
-                ...(doc.data() as Omit<Course, 'id'>),
-                id: doc.id,
-            }))
-            .filter(isCanonicalCourse);
-    }, []);
+    const fetchSearchedCourses = useCallback(
+        async (search = ''): Promise<Course[]> => {
+            const params = new URLSearchParams({ limit: '100' });
+            if (search.trim()) params.set('query', search.trim());
+            const result = await fetchCourseList(
+                `/api/academy/mobile/courses?${params.toString()}`,
+            );
+            return result.courses.filter(isCanonicalCourse);
+        },
+        [],
+    );
 
     const fetchMoreCourses = useCallback(async () => {
-
-        if (!lastDoc) {
-            return;
-        }
-        if (loadingMore) {
-            return;
-        }
-        if (!hasMore) {
-            return;
-        }
-        if (!user?.email) {
-            return;
-        }
+        if (!nextCursor || loadingMore || !hasMore) return;
 
         setLoadingMore(true);
-
         try {
-            const q = query(
-                courseRef,
-                orderBy('createdOn', 'desc'),
-                startAfter(lastDoc),
-                limit(10) // fetch a few extra in case some are yours
-            );
-
-            const snapshot = await getDocs(q);
-
-            const data = snapshot.docs
-                .map((doc) => ({ ...(doc.data() as Course), id: doc.id }))
-                .filter(
-                    (course) =>
-                        isCanonicalCourse(course) &&
-                        course.createdBy !== user.email,
-                );
-
-
-            setCourses((prev) => {
-                const updated = [...prev, ...data];
-                return updated;
+            const params = new URLSearchParams({
+                cursor: nextCursor,
+                limit: '10',
             });
-
-            setLastDoc(snapshot.docs.at(-1) ?? null);
-
-            if (snapshot.docs.length < 10 || data.length === 0) {
-                setHasMore(false);
-            }
+            const result = await fetchCourseList(
+                `/api/academy/mobile/courses?${params.toString()}`,
+            );
+            const visibleCourses = result.courses.filter(
+                course =>
+                    isCanonicalCourse(course) &&
+                    course.createdBy?.toLowerCase() !== user?.email?.toLowerCase(),
+            );
+            setCourses(previous => [...previous, ...visibleCourses]);
+            setNextCursor(result.nextCursor);
+            setHasMore(Boolean(result.nextCursor));
         } catch (error) {
-            console.error('Error fetching more courses:', error);
+            console.error('Failed to load more courses:', error);
             toast.error('Failed to load more courses.');
         } finally {
             setLoadingMore(false);
-            console.log('LoadingMore set to false');
         }
-    }, [lastDoc, loadingMore, hasMore, courseRef, user?.email]);
+    }, [hasMore, loadingMore, nextCursor, user?.email]);
 
-    const fetchCourseById = useCallback(async (id: string): Promise<Course | null> => {
-        if (!user?.email || !id) return null;
+    const fetchCourseById = useCallback(
+        async (id: string): Promise<Course | null> => {
+            if (!user?.email || !id) return null;
 
-        setFetchingCourseById(true);
-        try {
-            const docRef = doc(db, 'course', id); // direct reference by document ID
-            const snap = await getDoc(docRef);
-
-            if (!snap.exists()) {
-                console.warn('Course not found');
-                return null;
-            }
-
-            const data = snap.data() as Omit<Course, 'id'>;
-
-            if (data.originalCourseId) {
-                const rootRef = doc(db, 'course', data.originalCourseId);
-                const rootSnap = await getDoc(rootRef);
-
-                if (!rootSnap.exists()) {
-                    console.warn('Original course not found');
-                    return null;
+            setFetchingCourseById(true);
+            try {
+                const response = await fetch(
+                    getApiUrl(
+                        `/api/academy/mobile/courses/${encodeURIComponent(id)}`,
+                    ),
+                    { credentials: 'include' },
+                );
+                if (response.status === 404) return null;
+                if (!response.ok) {
+                    throw new Error(`Failed to load course (${response.status}).`);
                 }
-
-                const rootData = rootSnap.data() as Omit<Course, 'id'>;
-                return { id: rootSnap.id, ...rootData };
+                return (await response.json()) as Course;
+            } catch (error) {
+                console.error('Failed to load course:', error);
+                toast.error('Failed to load course.');
+                return null;
+            } finally {
+                setFetchingCourseById(false);
             }
-
-            return { id: snap.id, ...data };
-        } catch (error) {
-            console.error('Error fetching course:', error);
-            return null;
-        } finally {
-            setFetchingCourseById(false);
-        }
-    }, [user?.email]);
-
+        },
+        [user?.email],
+    );
 
     return {
         user,
@@ -219,6 +147,6 @@ export const CoursesQuery = () => {
         fetchCourseById,
         fetchingCourseById,
         setFetchingCourseById,
-        fetchSearchedCourses
+        fetchSearchedCourses,
     };
 };

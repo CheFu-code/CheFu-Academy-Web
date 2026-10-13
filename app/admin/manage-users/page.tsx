@@ -1,11 +1,9 @@
 'use client';
 
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { getApiUrl } from '@/lib/api-url';
-import { db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
 import { User } from '@/types/user';
 import { userMatches } from '@/utils/userSearch';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import ManageUsersUI from '../_components/UI/ManageUsersUI';
@@ -22,17 +20,23 @@ const ManageUsers = () => {
     const deferredSearch = React.useDeferredValue(debouncedSearch);
 
     React.useEffect(() => {
-        const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
-
-        const unsubscribe = onSnapshot(q, (snap) => {
-            const data = snap.docs.map(
-                (d) => ({ id: d.id, ...d.data() }) as User,
-            );
-            setUsers(data);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
+        let active = true;
+        const loadUsers = async () => {
+            try {
+                const response = await apiFetch('/api/academy/mobile/admin/users');
+                const result = (await response.json()) as { users: User[] };
+                if (active) setUsers(result.users);
+            } catch (error) {
+                console.error('Failed to load admin users:', error);
+                toast.error('Failed to load users.');
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+        void loadUsers();
+        return () => {
+            active = false;
+        };
     }, []);
 
     const handleDelete = async (user: {
@@ -44,22 +48,13 @@ const ManageUsers = () => {
             setDeleting(true);
 
             // 1️⃣ Call your Next.js API route
-            const res = await fetch(getApiUrl('/admin/delete-user'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    uid: user.uid,
-                    email: user.email, // ensure this matches your Firestore doc ID
-                }),
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to delete user');
-            }
-
+            await apiFetch(
+                `/api/academy/mobile/admin/users/${encodeURIComponent(user.email)}`,
+                { method: 'DELETE' },
+            );
+            setUsers((current) =>
+                current.filter((entry) => entry.email !== user.email),
+            );
             toast.success('User deleted successfully.');
         } catch (error: unknown) {
             console.error('Error deleting user:', error);
@@ -95,11 +90,11 @@ const ManageUsers = () => {
     const total = filteredUsers.length;
 
     const confirmDelete = async () => {
-        if (!selectedUser || !handleDelete) return;
+        if (!selectedUser) return;
         const id = selectedUser.uid ?? selectedUser.id;
         try {
             setDeletingId(id);
-            handleDelete(selectedUser); // ✅ actual delete happens here
+            await handleDelete(selectedUser);
             setConfirmOpen(false);
             setSelectedUser(null);
         } catch (err) {

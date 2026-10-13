@@ -1,7 +1,6 @@
 import { NotificationsTabSkeleton } from '@/components/skeletons/NotificationTabSkeleton';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { getApiUrl } from '@/lib/api-url';
-import getUserToken from '@/lib/getToken';
 import {
     NotificationPreferenceKey,
     NotificationPreferences,
@@ -35,15 +34,10 @@ const NotificationsTab = () => {
 
             try {
                 setLoadingPreferences(true);
-                const token = await getUserToken();
-                if (!token) return;
-
                 const response = await fetch(
                     getApiUrl('/notifications/preferences'),
                     {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
+                        credentials: 'include',
                     },
                 );
 
@@ -81,15 +75,12 @@ const NotificationsTab = () => {
             setChangingPrefKey(changingKey);
             setPrefs(nextPrefs);
 
-            const token = await getUserToken();
-            if (!token) throw new Error('Please sign in again.');
-
             const response = await fetch(getApiUrl('/notifications/preferences'), {
                 method: 'PATCH',
                 headers: {
-                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify(nextPrefs),
             });
 

@@ -15,43 +15,13 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-import { auth, db } from '@/lib/firebase';
-import { User } from '@/types/user';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { useAuthUser } from '@/hooks/useAuthUser';
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
 import { advanced, documents, navMain } from '@/constants/Data';
 import { NavAdvanced } from './nav-advanced';
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            if (firebaseUser && firebaseUser.email) {
-                const docRef = doc(db, 'users', firebaseUser.email);
-                const docSnap = await getDoc(docRef);
-
-                if (docSnap.exists()) {
-                    setUser(docSnap.data() as User);
-                } else {
-                    // fallback to firebase auth basic data
-                    setUser({
-                        fullname: firebaseUser.displayName || 'Unnamed User',
-                        email: firebaseUser.email!,
-                        profilePicture: firebaseUser.photoURL || 'logo.png',
-                    } as User);
-                }
-            } else {
-                setUser(null);
-            }
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, []);
+    const { user, loading } = useAuthUser();
 
     return (
         <Sidebar collapsible="offcanvas" {...props}>

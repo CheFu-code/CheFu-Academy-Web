@@ -15,12 +15,11 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
 import {
     NotificationPreferences,
     normalizeNotificationPreferences,
 } from '@/lib/notificationPreferences';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Bell, Globe2, Sparkles, UserRound } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -109,20 +108,23 @@ export default function OnboardingGate() {
 
         setSaving(true);
         try {
-            await setDoc(
-                doc(db, 'users', user.email),
-                {
+            await Promise.all([
+                apiFetch('/api/academy/mobile/me', {
+                    method: 'PATCH',
+                    body: JSON.stringify({
                     fullname: fullname.trim(),
                     bio: bio.trim(),
                     language,
                     countryCode,
                     country,
-                    emailPreferences,
                     onboardingComplete: true,
-                    updatedAt: serverTimestamp(),
-                },
-                { merge: true },
-            );
+                    }),
+                }),
+                apiFetch('/notifications/preferences', {
+                    method: 'PATCH',
+                    body: JSON.stringify(emailPreferences),
+                }),
+            ]);
             setCompletedLocally(true);
             toast.success('Onboarding completed. Welcome to CheFu Academy.');
         } catch (error) {

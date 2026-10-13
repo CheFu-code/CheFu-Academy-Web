@@ -1,19 +1,7 @@
 'use client';
 
 import {
-    getMonthlyAPIKeys,
-    getMonthlyCourses,
-    getMonthlyUsers,
-    getMonthlyVideos,
-    getOpenTickets,
-    getOverdueTickets,
-    getPendingTickets,
-    getResolvedTickets,
-    getTotalAPIKeys,
-    getTotalCourses,
-    getTotalUnreadTickets,
-    getTotalUsers,
-    getTotalVideos,
+    getAdminMetrics,
 } from '@/helpers/getAnalytics';
 import { subscribeToRecentTickets } from '@/services/tickets';
 import { Analytics } from '@/types/analytics';
@@ -43,49 +31,8 @@ const Dashboard = () => {
     useEffect(() => {
         const fetchAll = async () => {
             try {
-                const [
-                    totalUsers,
-                    monthlyUsers,
-                    totalCourses,
-                    monthlyCourses,
-                    totalVideos,
-                    monthlyVideos,
-                    totalAPIKeys,
-                    monthlyAPIKeys,
-                    openTickets,
-                    pendingTickets,
-                    resolvedTickets,
-                    overdueTickets,
-                ] = await Promise.all([
-                    getTotalUsers(),
-                    getMonthlyUsers(),
-                    getTotalCourses(),
-                    getMonthlyCourses(),
-                    getTotalVideos(),
-                    getMonthlyVideos(),
-                    getTotalAPIKeys(),
-                    getMonthlyAPIKeys(),
-                    getOpenTickets(),
-                    getPendingTickets(),
-                    getResolvedTickets(),
-                    getOverdueTickets(),
-                    getTotalUnreadTickets(),
-                ]);
-
-                setAnalytics({
-                    totalUsers,
-                    monthlyUsers,
-                    totalCourses,
-                    monthlyCourses,
-                    totalVideos,
-                    monthlyVideos,
-                    totalAPIKeys,
-                    monthlyAPIKeys,
-                    openTickets,
-                    pendingTickets,
-                    resolvedTickets,
-                    overdueTickets,
-                });
+                const result = await getAdminMetrics();
+                setAnalytics(result);
             } catch (err) {
                 console.error('Dashboard fetch error:', err);
             } finally {

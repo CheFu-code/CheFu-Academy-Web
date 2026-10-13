@@ -10,7 +10,6 @@ import { useScrollIntoView } from '@/hooks/useScrollIntoView';
 import { getApiUrl } from '@/lib/api-url';
 import { canAccessCourseAsLearner } from '@/lib/courseOwnership';
 import { arrayBufferToBase64, saveNativeFile } from '@/lib/desktop-files';
-import getUserToken from '@/lib/getToken';
 import { Course } from '@/types/course';
 import jsPDF from 'jspdf';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -66,22 +65,11 @@ const CourseLearning = () => {
         const fetchCourse = async () => {
             if (!courseId) return;
             try {
-                const token = await getUserToken();
-                if (!token) {
-                    toast.error('Please sign in again.');
-                    router.replace('/login');
-                    return;
-                }
-
                 const response = await fetch(
                     getApiUrl(
                         `/courses/${courseId}/learning?chapter=${chapterIndex}`,
                     ),
-                    {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    },
+                    { credentials: 'include' },
                 );
                 const data = await response.json().catch(() => ({}));
 
@@ -161,17 +149,14 @@ const CourseLearning = () => {
 
         const persistResume = async () => {
             try {
-                const token = await getUserToken();
-                if (!token) return;
-
                 const response = await fetch(
                     getApiUrl(`/courses/${course.id}/resume`),
                     {
                         method: 'PATCH',
                         headers: {
-                            Authorization: `Bearer ${token}`,
                             'Content-Type': 'application/json',
                         },
+                        credentials: 'include',
                         body: JSON.stringify({
                             chapterIndex,
                             contentIndex,
@@ -245,21 +230,14 @@ const CourseLearning = () => {
         setLoading(true);
 
         try {
-            const token = await getUserToken();
-            if (!token) {
-                toast.error('Please sign in again.');
-                router.replace('/login');
-                return;
-            }
-
             const response = await fetch(
                 getApiUrl(`/courses/${course.id}/complete-chapter`),
                 {
                     method: 'POST',
                     headers: {
-                        Authorization: `Bearer ${token}`,
                         'Content-Type': 'application/json',
                     },
+                    credentials: 'include',
                     body: JSON.stringify({ chapterIndex }),
                 },
             );

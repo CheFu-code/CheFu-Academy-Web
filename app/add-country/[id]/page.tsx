@@ -31,8 +31,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { db } from '@/lib/firebase';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 const schema = z.object({
@@ -74,16 +73,13 @@ export default function AddCountryCode({ params }: AddCountryCodePageProps) {
         const country = selected?.label ?? values.countryCode;
 
         try {
-            await setDoc(
-                doc(db, 'users', user?.email),
-                {
-                    uid: routeUserId,
+            await apiFetch('/api/academy/mobile/me', {
+                method: 'PATCH',
+                body: JSON.stringify({
                     countryCode: values.countryCode, // e.g., 'ZA'
                     country, // e.g., 'South Africa'
-                    updatedAt: serverTimestamp(),
-                },
-                { merge: true },
-            );
+                }),
+            });
 
             toast.success('Country saved', {
                 description: `You selected: ${country}`,

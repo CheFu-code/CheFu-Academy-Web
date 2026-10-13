@@ -1,5 +1,6 @@
 import { NotificationPreferences } from "@/lib/notificationPreferences";
-import { Timestamp } from "firebase/firestore";
+
+type SerializedDate = Date | string | number;
 
 export interface User {
     id: string;
@@ -9,8 +10,8 @@ export interface User {
     bio?: string;
     country: string;
     countryCode?: string;
-    createdAt: Timestamp;
-    updatedAt: Timestamp;
+    createdAt: SerializedDate;
+    updatedAt: SerializedDate;
     fcmToken?: string;
     isVerified: boolean;
     language: string;
@@ -28,18 +29,18 @@ export interface User {
         showCountry?: boolean;
         personalizedAiRecommendations?: boolean;
     };
-    lastLogin: Timestamp;
-    lastSeen: Timestamp;
+    lastLogin: SerializedDate;
+    lastSeen: SerializedDate;
     member: boolean;
     favoriteCourseIds?: string[];
-    favoriteCoursesUpdatedAt?: Timestamp;
+    favoriteCoursesUpdatedAt?: SerializedDate;
     onboardingComplete: boolean;
     appGuideComplete?: boolean;
     provider: string;
     roles: string[];
     subscriptionStatus: string;
     uid: string;
-    memberUntil?: Timestamp;
+    memberUntil?: SerializedDate;
     emailPreferences: NotificationPreferences;
     deviceInfo: {
         deviceBrand: string;

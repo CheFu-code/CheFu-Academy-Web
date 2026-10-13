@@ -10,9 +10,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { getApiUrl } from '@/lib/api-url';
 import { Course } from '@/types/course';
 import HomeCourseCard from '../HomeCourseCard';
-import { db } from '@/lib/firebase';
 import {
     ArrowDownAZ,
     Clock3,
@@ -22,7 +22,6 @@ import {
     Sparkles,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 
 type SortOption =
@@ -139,14 +138,18 @@ const MyCourseUI = ({ courses }: { courses: Course[] }) => {
         const fetchRecommendations = async () => {
             if (!focusCategory) return;
 
-            const snapshot = await getDocs(
-                query(collection(db, 'course'), orderBy('createdOn', 'desc'), limit(80)),
+            const response = await fetch(
+                getApiUrl('/api/academy/mobile/courses?limit=80'),
+                { credentials: 'include' },
             );
+            if (!response.ok) {
+                throw new Error(`Failed to load recommendations (${response.status}).`);
+            }
+            const result = (await response.json()) as { courses: Course[] };
             const ownedIds = new Set(
                 courses.map(course => course.originalCourseId || course.id),
             );
-            const nextCourses = snapshot.docs
-                .map(doc => ({ id: doc.id, ...(doc.data() as Omit<Course, 'id'>) }))
+            const nextCourses = result.courses
                 .filter(
                     course =>
                         !course.enrolled &&

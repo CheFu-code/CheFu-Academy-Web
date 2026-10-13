@@ -1,151 +1,79 @@
-import { db } from "@/lib/firebase";
-import { Ticket } from "@/types/supportTicket";
-import { toJsDate } from "@/utils/toJSDate";
-import { collection, doc, FirestoreError, getDoc, limit, onSnapshot, orderBy, query, Timestamp } from "firebase/firestore";
+import { apiFetch } from '@/lib/api-client';
+import { Ticket } from '@/types/supportTicket';
+import { toJsDate } from '@/utils/toJSDate';
+
+type TicketResponse = {
+    tickets: Ticket[];
+};
+
+function normalizeTicket(ticket: Ticket): Ticket {
+    return {
+        ...ticket,
+        createdAt: toJsDate(ticket.createdAt),
+        updatedAt: toJsDate(ticket.updatedAt),
+        lastAgentReplyAt: toJsDate(ticket.lastAgentReplyAt),
+    };
+}
+
+async function fetchTickets(scope?: 'all' | 'recent') {
+    const params = new URLSearchParams();
+    if (scope === 'all') params.set('scope', 'all');
+    const query = params.toString();
+    const response = await apiFetch(
+        `/api/academy/mobile/support-tickets${query ? `?${query}` : ''}`,
+    );
+    const result = (await response.json()) as TicketResponse;
+    return result.tickets.map(normalizeTicket);
+}
+
+function subscribe(
+    scope: 'all' | 'recent',
+    onUpdate: (tickets: Ticket[]) => void,
+    onError?: (error: Error) => void,
+) {
+    let active = true;
+    let pending = false;
+    const load = async () => {
+        if (pending) return;
+        pending = true;
+        try {
+            const tickets = await fetchTickets('all');
+            if (active) onUpdate(scope === 'recent' ? tickets.slice(0, 3) : tickets);
+        } catch (error) {
+            const normalized =
+                error instanceof Error ? error : new Error('Unable to load tickets.');
+            if (onError) onError(normalized);
+            else console.error('Ticket list request failed:', normalized);
+        } finally {
+            pending = false;
+        }
+    };
+    void load();
+    const timer = window.setInterval(load, 30_000);
+    return () => {
+        active = false;
+        window.clearInterval(timer);
+    };
+}
 
 export function subscribeToRecentTickets(
     onUpdate: (tickets: Ticket[]) => void,
-    onError?: (error: FirestoreError) => void
+    onError?: (error: Error) => void,
 ) {
-    const ticketsRef = collection(db, 'support-tickets')
-    const q = query(ticketsRef, orderBy('createdAt', 'desc'), limit(3));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-
-        const tickets: Ticket[] = snapshot.docs.map((doc) => {
-
-            const data = doc.data({ serverTimestamps: 'estimate' }) as Partial<Ticket> & {
-                createdAt?: Timestamp | number | Date | string | null;
-                updatedAt?: Timestamp | number | Date | string | null;
-                lastAgentReplyAt?: Timestamp | number | Date | string | null; // ✅
-                hasAgentReply?: boolean | string;
-            };
-
-
-            const createdAt = toJsDate(data.createdAt);
-            const updatedAt = toJsDate(data.updatedAt);
-            const lastAgentReplyAt = toJsDate(data.lastAgentReplyAt); // ✅
-
-            return {
-                id: doc.id,
-                title: data.title ?? '',
-                status: data.status ?? 'open',
-                priority: data.priority ?? 'low',
-                userName: data.userName ?? '',
-                message: data.message ?? '',
-                email: data.email ?? '',
-                overdue: data.overdue ?? false,
-                userId: data.userId ?? '',
-                updatedAt,
-                createdAt,
-
-                hasAgentReply:
-                    typeof data.hasAgentReply === 'boolean'
-                        ? data.hasAgentReply
-                        : data.hasAgentReply === 'true'
-                            ? true
-                            : data.hasAgentReply === 'false'
-                                ? false
-                                : undefined,
-                lastAgentReplyAt,
-
-            };
-        });
-
-        onUpdate(tickets);
-    }
-        ,
-        (error) => {
-            if (onError) onError(error);
-            else console.error('subscribeToRecentTickets error:', error);
-        });
-
-    return unsubscribe;
-
-}
-
-export async function getTicketById(id: string): Promise<Ticket> {
-    const docRef = doc(db, 'support-tickets', id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-        const data = docSnap.data() as Partial<Ticket> & {
-            createdAt?: Timestamp | number | Date | string | null;
-            updatedAt?: Timestamp | number | Date | string | null;
-        };
-        const createdAt = toJsDate(data.createdAt);
-        const updatedAt = toJsDate(data.updatedAt);
-        return {
-            id: docSnap.id,
-            title: data.title ?? '',
-            status: data.status ?? 'open',
-            priority: data.priority ?? 'low',
-            userName: data.userName ?? '',
-            message: data.message ?? '',
-            email: data.email ?? '',
-            overdue: data.overdue ?? false,
-            userId: data.userId ?? '',
-            updatedAt,
-            createdAt,
-        };
-    }
-    throw new Error(`Ticket with ID ${id} not found`);
+    return subscribe('recent', onUpdate, onError);
 }
 
 export function subscribeToAllTickets(
     onUpdate: (tickets: Ticket[]) => void,
-    onError?: (error: FirestoreError) => void
+    onError?: (error: Error) => void,
 ) {
-    const ticketsRef = collection(db, 'support-tickets')
-    const q = query(ticketsRef, orderBy('createdAt', 'desc'));
+    return subscribe('all', onUpdate, onError);
+}
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-
-        const tickets: Ticket[] = snapshot.docs.map((doc) => {
-
-            const data = doc.data({ serverTimestamps: 'estimate' }) as Partial<Ticket> & {
-                createdAt?: Timestamp | number | Date | string | null;
-                updatedAt?: Timestamp | number | Date | string | null;
-                lastAgentReplyAt?: Timestamp | number | Date | string | null;
-                hasAgentReply?: boolean | string;
-            };
-
-            const createdAt = toJsDate(data.createdAt);
-            const updatedAt = toJsDate(data.updatedAt);
-            const lastAgentReplyAt = toJsDate(data.lastAgentReplyAt);
-
-            return {
-                id: doc.id,
-                title: data.title ?? '',
-                status: data.status ?? 'open',
-                priority: data.priority ?? 'low',
-                userName: data.userName ?? '',
-                message: data.message ?? '',
-                email: data.email ?? '',
-                overdue: data.overdue ?? false,
-                userId: data.userId ?? '',
-                updatedAt,
-                createdAt,
-                hasAgentReply:
-                    typeof data.hasAgentReply === 'boolean'
-                        ? data.hasAgentReply
-                        : data.hasAgentReply === 'true'  // in case some old doc stored as string
-                            ? true
-                            : data.hasAgentReply === 'false'
-                                ? false
-                                : undefined,
-                lastAgentReplyAt,
-
-            };
-        });
-
-        onUpdate(tickets);
-    }
-        ,
-        (error) => {
-            if (onError) onError(error);
-            else console.error('subscribeToRecentTickets error:', error);
-        });
-
-    return unsubscribe;
-
+export async function getTicketById(id: string): Promise<Ticket> {
+    const response = await apiFetch(
+        `/api/academy/mobile/support-tickets/${encodeURIComponent(id)}`,
+    );
+    const result = (await response.json()) as { ticket: Ticket };
+    return normalizeTicket(result.ticket);
 }

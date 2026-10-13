@@ -1,50 +1,46 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { auth } from '@/lib/firebase';
-import { logSecurityEvent } from '@/lib/securityEvents';
-import { sendEmailVerification } from 'firebase/auth';
+import { useAuthUser } from '@/hooks/useAuthUser';
+import { apiFetch } from '@/lib/api-client';
+import { chefuManageAccountUrl } from '@/lib/chefu-account';
 import { MailCheck } from 'lucide-react';
-import { useEffect, useState, useTransition } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 export default function EmailVerificationBanner() {
-    const [needsVerification, setNeedsVerification] = useState(false);
-    const [pending, startTransition] = useTransition();
+    const { user } = useAuthUser();
+    const [pending, setPending] = useState(false);
 
-    useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged(user => {
-            setNeedsVerification(Boolean(user?.email && !user.emailVerified));
-        });
-
-        return () => unsubscribe();
-    }, []);
-
-    const resendVerification = () => {
-        startTransition(async () => {
-            const user = auth.currentUser;
-            if (!user) {
-                toast.error('Please sign in again.');
-                return;
-            }
-
-            try {
-                await sendEmailVerification(user, {
-                    url:
-                        process.env.NEXT_PUBLIC_EMAIL_VERIFY_CONTINUE_URL ||
-                        `${window.location.origin}/dashboard`,
-                    handleCodeInApp: false,
-                });
-                await logSecurityEvent('verification_email_sent');
+    const resendVerification = async () => {
+        setPending(true);
+        try {
+            const response = await apiFetch('/auth/security/email-verification', {
+                method: 'POST',
+            });
+            const result = (await response.json()) as {
+                sent: boolean;
+                verified: boolean;
+            };
+            if (result.verified) {
+                toast.success('Your email is already verified.');
+                window.location.reload();
+            } else {
                 toast.success('Verification email sent.');
-            } catch (error) {
-                console.error('Failed to send verification email:', error);
-                toast.error('Could not send verification email.');
             }
-        });
+        } catch (error) {
+            console.error('Failed to send verification email:', error);
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Could not send verification email.',
+            );
+        } finally {
+            setPending(false);
+        }
     };
 
-    if (!needsVerification) return null;
+    if (!user || user.isVerified !== false) return null;
 
     return (
         <section className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-4">
@@ -67,6 +63,17 @@ export default function EmailVerificationBanner() {
                     disabled={pending}
                 >
                     {pending ? 'Sending...' : 'Resend email'}
+                </Button>
+                <Button
+                    type="button"
+                    variant="link"
+                    onClick={() =>
+                        window.location.assign(
+                            chefuManageAccountUrl(window.location.href, 'profile'),
+                        )
+                    }
+                >
+                    Manage account
                 </Button>
             </div>
         </section>

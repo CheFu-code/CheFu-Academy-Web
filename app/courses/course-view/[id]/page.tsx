@@ -14,19 +14,10 @@ import { downloadCoursePDF_Office } from '@/helpers/downloadCourse';
 import { useFavoriteCourse } from '@/hooks/useFavoriteCourse';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { isCourseOwnerEmail } from '@/lib/courseOwnership';
-import { db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
 import { CoursesQuery } from '@/lib/firestore/courseQueries';
 import { Course } from '@/types/course';
 import { formatParagraph } from '@/utils/formatParagraph';
-import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    setDoc,
-    where,
-} from 'firebase/firestore';
 import {
     ArrowRight,
     BookOpen,
@@ -78,70 +69,28 @@ const CourseView = () => {
 
         try {
             setEnrolling(true);
-            const rootCourseRef = doc(db, 'course', rootCourseId);
-            const rootCourseSnap = await getDoc(rootCourseRef);
-
-            if (!rootCourseSnap.exists()) {
-                toast.error('Original course was not found.');
-                return;
-            }
-
-            const rootCourse = {
-                ...(rootCourseSnap.data() as Omit<Course, 'id'>),
-                id: rootCourseSnap.id,
-            };
-
-            if (rootCourse.originalCourseId || rootCourse.enrolled) {
-                toast.error('This course copy cannot be enrolled directly.');
-                return;
-            }
-
-            if (isCourseOwnerEmail(rootCourse.createdBy, user.email)) {
+            if (isCourseOwnerEmail(course.createdBy, user.email)) {
                 toast.error("You can't enroll in your own course.");
-                router.replace(`/courses/my-courses/course-view/${rootCourse.id}`);
+                router.replace(`/courses/my-courses/course-view/${course.id}`);
                 return;
             }
 
-            const emailSafe = user.email.replace(/[@.]/g, '_');
-
-            // check if a copy already exists for this user
-            const q = query(
-                collection(db, 'course'),
-                where('createdBy', '==', user.email),
-                where('originalCourseId', '==', rootCourseId),
+            const response = await apiFetch(
+                `/api/academy/mobile/courses/${encodeURIComponent(rootCourseId)}/enroll`,
+                { method: 'POST' },
             );
-            const querySnap = await getDocs(q);
-
-            if (!querySnap.empty) {
-                toast.error('You are already enrolled in this course!');
-                const existingDocId = querySnap.docs[0].id;
-                router.replace(
-                    `/courses/my-courses/course-view/${existingDocId}`,
-                );
-                return;
-            }
-
-            // create new copy
-            const docId = emailSafe + '_' + Date.now().toString();
-            const data = {
-                ...rootCourse,
-                id: docId,
-                docId,
-                originalCourseId: rootCourseId,
-                createdBy: user.email,
-                createdOn: new Date(),
-                enrolled: true,
-                completedChapter: [],
-                lastStudiedAt: null,
-                lastStudiedChapterIndex: null,
-                lastStudiedContentIndex: null,
-                lastStudiedChapterName: '',
-                lastStudiedTopic: '',
+            const result = (await response.json()) as {
+                course: Course;
+                alreadyEnrolled: boolean;
             };
-
-            await setDoc(doc(db, 'course', docId), data);
-            toast.success('Course enrolled successfully!');
-            router.replace(`/courses/my-courses/course-view/${docId}`);
+            toast.success(
+                result.alreadyEnrolled
+                    ? 'You are already enrolled in this course.'
+                    : 'Course enrolled successfully!',
+            );
+            router.replace(
+                `/courses/my-courses/course-view/${result.course.id}`,
+            );
         } catch (error) {
             console.error('Failed to enroll course:', error);
             toast.error('Failed to enroll. Please try again.');

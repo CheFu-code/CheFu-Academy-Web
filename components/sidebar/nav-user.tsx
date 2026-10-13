@@ -22,10 +22,8 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
-import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
+import { useSignOut } from '@/hooks/useSignOut';
 import Link from 'next/link';
-import { toast } from 'sonner';
 import { Button } from '../ui/button';
 
 export function NavUser({
@@ -38,6 +36,7 @@ export function NavUser({
     };
 }) {
     const { isMobile } = useSidebar();
+    const { handleLogout, loggingOut } = useSignOut();
 
     return (
         <SidebarMenu>
@@ -114,18 +113,8 @@ export function NavUser({
                         <DropdownMenuItem asChild>
                             <Button
                                 className="cursor-pointer"
-                                onClick={() => {
-                                    try {
-                                        signOut(auth);
-                                        toast.success(
-                                            'Logged out successfully',
-                                        );
-                                    } catch (error) {
-                                        toast.error(
-                                            `No user is logged in. ${error}`,
-                                        );
-                                    }
-                                }}
+                                onClick={() => void handleLogout()}
+                                disabled={loggingOut}
                                 variant="outline"
                             >
                                 <IconLogout />

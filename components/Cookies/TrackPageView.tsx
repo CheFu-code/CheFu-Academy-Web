@@ -2,16 +2,22 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { logEvent } from 'firebase/analytics';
-import { analytics } from '@/lib/firebase';
+
+declare global {
+    interface Window {
+        gtag?: (
+            command: string,
+            eventName: string,
+            eventParameters?: Record<string, string>,
+        ) => void;
+    }
+}
 
 export function TrackPageView() {
     const pathname = usePathname();
 
     useEffect(() => {
-        if (!analytics) return;
-
-        logEvent(analytics, 'page_view', {
+        window.gtag?.('event', 'page_view', {
             page_path: pathname,
         });
     }, [pathname]);

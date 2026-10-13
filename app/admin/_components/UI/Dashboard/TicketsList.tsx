@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Ticket } from '@/types/supportTicket';
+import { toJsDate } from '@/utils/toJSDate';
 import { Loader } from 'lucide-react';
 import NoTicket from '../Tickets/NoTicket';
 
@@ -76,9 +77,8 @@ const TicketsList = ({
                                         {t.priority}{' '}
                                     </span>
                                     • Created{' '}
-                                    {t.createdAt
-                                        ? t.createdAt.toLocaleDateString()
-                                        : 'Unknown'}
+                                    {toJsDate(t.createdAt)?.toLocaleDateString() ||
+                                        'Unknown'}
                                 </div>
                             </div>
 

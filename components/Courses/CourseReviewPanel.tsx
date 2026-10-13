@@ -2,16 +2,9 @@
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { auth, db } from '@/lib/firebase';
+import { useAuthUser } from '@/hooks/useAuthUser';
+import { apiFetch } from '@/lib/api-client';
 import { Course } from '@/types/course';
-import { onAuthStateChanged } from 'firebase/auth';
-import {
-    doc,
-    getDoc,
-    increment,
-    runTransaction,
-    serverTimestamp,
-} from 'firebase/firestore';
 import { Star } from 'lucide-react';
 import { useEffect, useState, useTransition } from 'react';
 import { toast } from 'sonner';
@@ -39,6 +32,7 @@ export default function CourseReviewPanel({
         reviewCount: Number(course.reviewCount) || 0,
     });
     const [pending, startTransition] = useTransition();
+    const { user, loading: authLoading } = useAuthUser();
 
     useEffect(() => {
         setStats({
@@ -48,11 +42,11 @@ export default function CourseReviewPanel({
     }, [course.averageRating, course.reviewCount]);
 
     useEffect(() => {
-        if (!completed) return;
+        if (!completed || authLoading) return;
 
         setLoadingReview(true);
-
-        const unsubscribe = onAuthStateChanged(auth, async user => {
+        let active = true;
+        const loadReview = async () => {
             if (!user) {
                 setExistingReview(null);
                 setRating(0);
@@ -63,14 +57,17 @@ export default function CourseReviewPanel({
             }
 
             try {
-                const reviewRef = doc(db, 'course', course.id, 'reviews', user.uid);
-                const reviewSnap = await getDoc(reviewRef);
-
-                if (reviewSnap.exists()) {
-                    const review = reviewSnap.data();
+                const response = await apiFetch(
+                    `/api/academy/mobile/courses/${encodeURIComponent(course.id)}/reviews/${encodeURIComponent(user.uid)}`,
+                );
+                const result = (await response.json()) as {
+                    review: ExistingReview | null;
+                };
+                if (!active) return;
+                if (result.review) {
                     const savedReview = {
-                        rating: Number(review.rating) || 0,
-                        comment: String(review.comment || ''),
+                        rating: Number(result.review.rating) || 0,
+                        comment: String(result.review.comment || ''),
                     };
 
                     setExistingReview(savedReview);
@@ -87,12 +84,15 @@ export default function CourseReviewPanel({
                 console.error('Failed to load review:', error);
                 toast.error('Could not check your existing review.');
             } finally {
-                setLoadingReview(false);
+                if (active) setLoadingReview(false);
             }
-        });
+        };
+        void loadReview();
 
-        return () => unsubscribe();
-    }, [completed, course.id]);
+        return () => {
+            active = false;
+        };
+    }, [authLoading, completed, course.id, user]);
 
     if (!completed) return null;
 
@@ -103,74 +103,29 @@ export default function CourseReviewPanel({
         }
 
         startTransition(async () => {
-            const user = auth.currentUser;
             if (!user?.email) {
                 toast.error('Please sign in again.');
                 return;
             }
 
-            const courseRef = doc(db, 'course', course.id);
-            const reviewRef = doc(db, 'course', course.id, 'reviews', user.uid);
-
             try {
-                let submittedStats = stats;
-
-                await runTransaction(db, async transaction => {
-                    const [courseSnap, reviewSnap] = await Promise.all([
-                        transaction.get(courseRef),
-                        transaction.get(reviewRef),
-                    ]);
-                    const current = courseSnap.data() || {};
-                    const currentAverage = Number(current.averageRating) || 0;
-                    const currentCount = Number(current.reviewCount) || 0;
-                    const previousRating = Number(reviewSnap.data()?.rating) || 0;
-                    const nextCount = reviewSnap.exists()
-                        ? currentCount
-                        : currentCount + 1;
-                    const nextTotal =
-                        currentAverage * currentCount - previousRating + rating;
-                    const nextAverage = nextCount > 0 ? nextTotal / nextCount : rating;
-                    const roundedAverage = Number(nextAverage.toFixed(2));
-
-                    transaction.set(
-                        reviewRef,
-                        {
-                            rating,
-                            comment: comment.trim(),
-                            courseId: course.id,
-                            courseTitle: course.courseTitle,
-                            userEmail: user.email,
-                            updatedAt: serverTimestamp(),
-                            createdAt: reviewSnap.exists()
-                                ? reviewSnap.data()?.createdAt || serverTimestamp()
-                                : serverTimestamp(),
-                        },
-                        { merge: true },
-                    );
-
-                    transaction.set(
-                        courseRef,
-                        {
-                            averageRating: roundedAverage,
-                            reviewCount: reviewSnap.exists()
-                                ? currentCount
-                                : increment(1),
-                        },
-                        { merge: true },
-                    );
-
-                    submittedStats = {
-                        averageRating: roundedAverage,
-                        reviewCount: nextCount,
-                    };
-                });
-
+                const response = await apiFetch(
+                    `/api/academy/mobile/courses/${encodeURIComponent(course.id)}/reviews`,
+                    {
+                        method: 'PUT',
+                        body: JSON.stringify({ rating, comment: comment.trim() }),
+                    },
+                );
+                const result = (await response.json()) as {
+                    stats: { averageRating: number; reviewCount: number };
+                    review: ExistingReview;
+                };
                 const savedReview = {
-                    rating,
-                    comment: comment.trim(),
+                    rating: result.review.rating,
+                    comment: result.review.comment,
                 };
 
-                setStats(submittedStats);
+                setStats(result.stats);
                 setExistingReview(savedReview);
                 setRating(savedReview.rating);
                 setComment(savedReview.comment);
@@ -182,7 +137,11 @@ export default function CourseReviewPanel({
                 );
             } catch (error) {
                 console.error('Failed to submit review:', error);
-                toast.error('Could not save your review.');
+                toast.error(
+                    error instanceof Error
+                        ? error.message
+                        : 'Could not save your review.',
+                );
             }
         });
     };

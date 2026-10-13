@@ -12,8 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { db } from '@/lib/firebase';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { apiFetch } from '@/lib/api-client';
 import { ArrowLeft, Bug, Lightbulb, MessageSquareHeart } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
@@ -45,20 +44,16 @@ const Feedback = () => {
         setLoading(true);
 
         try {
-            await addDoc(collection(db, 'feedback'), {
-                providedName: name,
-                realName: user?.fullname || null,
-                providedEmail: email,
-                realEmail: user?.email || null,
+            await apiFetch('/api/academy/mobile/feedback', {
+                method: 'POST',
+                body: JSON.stringify({
+                name,
+                email,
                 message,
-                createdAt: serverTimestamp(),
-                userId: user?.uid || null,
-                planType: user?.subscriptionStatus || 'Free',
                 device: navigator.userAgent,
                 pageURL: window.location.href,
                 referrer: document.referrer || null,
-                status: 'new',
-                resolved: false,
+                }),
             });
 
             setName('');

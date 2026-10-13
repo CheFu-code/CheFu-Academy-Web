@@ -1,15 +1,8 @@
 "use client";
 
-import { db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
 import { Course } from '@/types/course';
 import { User } from '@/types/user';
-import {
-    arrayRemove,
-    arrayUnion,
-    doc,
-    serverTimestamp,
-    setDoc,
-} from 'firebase/firestore';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -46,16 +39,16 @@ export const useFavoriteCourse = (
 
         try {
             setFavoritePending(true);
-            await setDoc(
-                doc(db, 'users', user.email),
-                {
-                    favoriteCourseIds: nextIsFavorite
-                        ? arrayUnion(favoriteCourseId)
-                        : arrayRemove(favoriteCourseId),
-                    favoriteCoursesUpdatedAt: serverTimestamp(),
-                },
-                { merge: true },
-            );
+            const favoriteIds = Array.isArray(user.favoriteCourseIds)
+                ? user.favoriteCourseIds.map(String)
+                : [];
+            const updatedFavoriteIds = nextIsFavorite
+                ? [...new Set([...favoriteIds, favoriteCourseId])]
+                : favoriteIds.filter(id => id !== favoriteCourseId);
+            await apiFetch('/api/academy/mobile/me', {
+                method: 'PATCH',
+                body: JSON.stringify({ favoriteCourseIds: updatedFavoriteIds }),
+            });
 
             setIsFavorite(nextIsFavorite);
             toast.success(

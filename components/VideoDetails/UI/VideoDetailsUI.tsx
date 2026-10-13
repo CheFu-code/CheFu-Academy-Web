@@ -32,9 +32,6 @@ function getYouTubeEmbedUrl(video: Video) {
 
 function formatVideoDate(value: Video['uploadedAt']) {
     if (!value) return 'Recently added';
-    if (typeof value.toDate === 'function') {
-        return value.toDate().toLocaleDateString();
-    }
 
     const date = new Date(value);
     return Number.isNaN(date.getTime())

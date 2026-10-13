@@ -1,12 +1,5 @@
 "use client";
 
-import {
-    collection,
-    getDocs,
-    getFirestore,
-    orderBy,
-    query,
-} from "firebase/firestore";
 import * as React from "react";
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
 
@@ -33,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { apiFetch } from "@/lib/api-client";
 
 const chartConfig = {
     desktop: { label: "Desktop", color: "var(--primary)" },
@@ -46,29 +40,27 @@ export function ChartAreaInteractive() {
         { date: string; desktop: number; mobile: number }[]
     >([]);
 
-    const db = getFirestore();
-
-    // Fetch real user activity from Firestore
     React.useEffect(() => {
+        let active = true;
         const fetchData = async () => {
-            const activityRef = collection(db, "userActivity");
-            const q = query(activityRef, orderBy("date", "asc"));
-            const snapshot = await getDocs(q);
-            const data: { date: string; desktop: number; mobile: number }[] =
-                [];
-            snapshot.forEach((doc) => {
-                const d = doc.data();
-                data.push({
-                    date: d.id,
-                    desktop: d.desktop || 0,
-                    mobile: d.mobile || 0,
-                });
-            });
-            setChartData(data);
+            try {
+                const response = await apiFetch(
+                    "/api/academy/mobile/admin/user-activity",
+                );
+                const result = (await response.json()) as {
+                    activity: { date: string; desktop: number; mobile: number }[];
+                };
+                if (active) setChartData(result.activity);
+            } catch (error) {
+                console.error("Failed to load visitor analytics:", error);
+            }
         };
 
-        fetchData();
-    }, [db]);
+        void fetchData();
+        return () => {
+            active = false;
+        };
+    }, []);
 
     React.useEffect(() => {
         if (isMobile) setTimeRange("7d");

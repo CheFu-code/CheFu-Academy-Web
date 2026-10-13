@@ -4,15 +4,8 @@ import CourseCard from '@/components/Shared/CourseCard';
 import Header from '@/components/Shared/Header';
 import GridCourseCardSkeleton from '@/components/skeletons/GridCourseCardSkeleton';
 import { Button } from '@/components/ui/button';
-import { db } from '@/lib/firebase';
+import { getApiUrl } from '@/lib/api-url';
 import { Course } from '@/types/course';
-import {
-    collection,
-    documentId,
-    getDocs,
-    query,
-    where,
-} from 'firebase/firestore';
 import { BookOpen, Heart, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
@@ -29,51 +22,6 @@ const chunkIds = (ids: string[]) => {
 
     return chunks;
 };
-
-const toCourse = (id: string, data: Record<string, unknown>): Course => ({
-    id,
-    docId: String(data.docId || id),
-    banner_image: String(data.banner_image || '/tech-coding.jpg'),
-    category: String(data.category || ''),
-    chapters: Array.isArray(data.chapters) ? data.chapters : [],
-    courseTitle: String(data.courseTitle || 'Untitled course'),
-    createdBy: String(data.createdBy || ''),
-    createdOn: data.createdOn as Course['createdOn'],
-    description: String(data.description || ''),
-    enrolled: Boolean(data.enrolled),
-    flashcards: Array.isArray(data.flashcards) ? data.flashcards : [],
-    qa: Array.isArray(data.qa) ? data.qa : [],
-    quiz: Array.isArray(data.quiz) ? data.quiz : [],
-    completedChapter: Array.isArray(data.completedChapter)
-        ? data.completedChapter
-        : [],
-    originalCourseId:
-        typeof data.originalCourseId === 'string'
-            ? data.originalCourseId
-            : undefined,
-    lastStudiedAt: data.lastStudiedAt as Course['lastStudiedAt'],
-    lastStudiedChapterIndex:
-        typeof data.lastStudiedChapterIndex === 'number'
-            ? data.lastStudiedChapterIndex
-            : undefined,
-    lastStudiedContentIndex:
-        typeof data.lastStudiedContentIndex === 'number'
-            ? data.lastStudiedContentIndex
-            : undefined,
-    lastStudiedChapterName:
-        typeof data.lastStudiedChapterName === 'string'
-            ? data.lastStudiedChapterName
-            : undefined,
-    lastStudiedTopic:
-        typeof data.lastStudiedTopic === 'string'
-            ? data.lastStudiedTopic
-            : undefined,
-    averageRating: Number(data.averageRating || 0),
-    reviewCount: Number(data.reviewCount || 0),
-    completedChapterEvents: Array.isArray(data.completedChapterEvents)
-        ? data.completedChapterEvents
-        : [],
-});
 
 export default function FavouriteCoursesPage() {
     const { user, loading: authLoading } = useAuthUser();
@@ -103,27 +51,34 @@ export default function FavouriteCoursesPage() {
             setLoading(true);
 
             try {
-                const snapshots = await Promise.all(
-                    chunkIds(favoriteIds).map((ids) =>
-                        getDocs(
-                            query(
-                                collection(db, 'course'),
-                                where(documentId(), 'in', ids),
-                            ),
-                        ),
-                    ),
-                );
-                const nextCourses = snapshots
-                    .flatMap((snapshot) =>
-                        snapshot.docs.map((docSnap) =>
-                            toCourse(docSnap.id, docSnap.data()),
-                        ),
-                    )
-                    .sort(
-                        (a, b) =>
-                            favoriteIds.indexOf(a.originalCourseId || a.id) -
-                            favoriteIds.indexOf(b.originalCourseId || b.id),
+                const nextCourses: Course[] = [];
+                for (const ids of chunkIds(favoriteIds)) {
+                    const batch = await Promise.all(
+                        ids.map(async id => {
+                            const response = await fetch(
+                                getApiUrl(
+                                    `/api/academy/mobile/courses/${encodeURIComponent(id)}`,
+                                ),
+                                { credentials: 'include' },
+                            );
+                            if (response.status === 404) return null;
+                            if (!response.ok) {
+                                throw new Error(
+                                    `Failed to load favourite course (${response.status}).`,
+                                );
+                            }
+                            return (await response.json()) as Course;
+                        }),
                     );
+                    nextCourses.push(
+                        ...batch.filter((course): course is Course => course !== null),
+                    );
+                }
+                nextCourses.sort(
+                    (a, b) =>
+                        favoriteIds.indexOf(a.originalCourseId || a.id) -
+                        favoriteIds.indexOf(b.originalCourseId || b.id),
+                );
 
                 if (!cancelled) setCourses(nextCourses);
             } catch (error) {

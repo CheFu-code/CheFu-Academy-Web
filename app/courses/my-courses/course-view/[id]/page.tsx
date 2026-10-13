@@ -1,6 +1,5 @@
 'use client';
 
-import { doc, getDoc } from 'firebase/firestore';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -9,8 +8,8 @@ import CourseViewUI from '@/components/Courses/UI/CourseViewUI';
 import CourseCardSkeleton from '@/components/skeletons/CourseCardSkeleton';
 import { useFavoriteCourse } from '@/hooks/useFavoriteCourse';
 import { useCourseFunctions } from '@/hooks/useCourseFunctions';
+import { getApiUrl } from '@/lib/api-url';
 import { canAccessCourseAsLearner } from '@/lib/courseOwnership';
-import { db } from '@/lib/firebase';
 import { Course } from '@/types/course';
 import { toast } from 'sonner';
 
@@ -45,15 +44,21 @@ const CourseView = () => {
                 setLoading(true);
                 setCourse(undefined);
 
-                const docRef = doc(db, 'course', courseId);
-                const docSnap = await getDoc(docRef);
+                const response = await fetch(
+                    getApiUrl(
+                        `/api/academy/mobile/courses/${encodeURIComponent(courseId)}`,
+                    ),
+                    { credentials: 'include' },
+                );
 
                 if (cancelled) return;
 
-                if (docSnap.exists()) {
-                    setCourse({ id: docSnap.id, ...docSnap.data() } as Course);
-                } else {
+                if (response.status === 404) {
                     setCourse(undefined);
+                } else if (!response.ok) {
+                    throw new Error(`Failed to load course (${response.status}).`);
+                } else {
+                    setCourse((await response.json()) as Course);
                 }
             } catch (error) {
                 console.error('Failed to fetch course:', error);

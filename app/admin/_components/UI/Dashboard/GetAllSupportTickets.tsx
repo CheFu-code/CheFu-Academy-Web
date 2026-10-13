@@ -9,6 +9,7 @@ import {
     StatusFilter,
 } from '@/app/admin/support-tickets/all/page';
 import { PRIORITY_VALUES } from '@/constants/Data';
+import { toJsDate } from '@/utils/toJSDate';
 
 const GetAllSupportTickets = ({
     filteredTickets,
@@ -195,9 +196,8 @@ const GetAllSupportTickets = ({
                                             {t.priority}{' '}
                                         </span>
                                         • Created{' '}
-                                        {t.createdAt
-                                            ? t.createdAt.toLocaleDateString()
-                                            : 'Unknown'}
+                                        {toJsDate(t.createdAt)?.toLocaleDateString() ||
+                                            'Unknown'}
                                     </div>
                                 </div>
 

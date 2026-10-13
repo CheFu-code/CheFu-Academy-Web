@@ -1,7 +1,5 @@
 // app/types/course.ts
 
-import { Timestamp } from 'firebase/firestore';
-
 export interface Flashcard {
     front: string;
     back: string;
@@ -37,7 +35,7 @@ export interface Course {
     chapters: Chapter[];
     courseTitle: string;
     createdBy: string;
-    createdOn?: Timestamp;
+    createdOn?: Date | string | number;
     description: string;
     docId: string;
     enrolled: boolean;
@@ -46,7 +44,7 @@ export interface Course {
     quiz: Quiz[];
     completedChapter?: string[];
     originalCourseId?: string
-    lastStudiedAt?: Timestamp;
+    lastStudiedAt?: Date | string | number;
     lastStudiedChapterIndex?: number;
     lastStudiedContentIndex?: number;
     lastStudiedChapterName?: string;

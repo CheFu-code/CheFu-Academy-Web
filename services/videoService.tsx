@@ -1,82 +1,22 @@
-import { auth, db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
+import { getApiUrl } from '@/lib/api-url';
 import { Video } from '@/types/video';
-import {
-    collection,
-    doc,
-    DocumentData,
-    DocumentSnapshot,
-    getDoc,
-    getDocs,
-    orderBy,
-    query,
-    QueryDocumentSnapshot,
-    serverTimestamp,
-    setDoc,
-    where,
-} from 'firebase/firestore';
-import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
-import { v4 as uuidv4 } from 'uuid';
 
-const youtubeWatchUrl = (videoId: string) =>
-    `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
-
-const youtubeEmbedUrl = (videoId: string) =>
-    `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;
-
-type VideoSnapshot =
-    | QueryDocumentSnapshot<DocumentData>
-    | DocumentSnapshot<DocumentData>;
-
-const toUploadedVideo = (docSnap: VideoSnapshot): Video => {
-    const data = docSnap.data() || {};
-
-    return {
-        id: docSnap.id,
-        source: 'uploaded',
-        title: data.title || 'Untitled video',
-        instructorCompany: data.instructorCompany || '',
-        instructorName: data.instructorName || '',
-        description: data.description || '',
-        videoURL: data.videoURL || data.url || '',
-        thumbnailURL: data.thumbnailURL || data.thumbnail || '',
-        uploadedBy: data.uploadedBy || '',
-        uploadedAt: data.uploadedAt || null,
-        category: data.category || 'Tech & Coding',
-        visibility: data.visibility || 'public',
-        level: data.level || '',
-        duration: Number(data.duration || 0),
-        views: Number(data.views || 0),
-        topics: Array.isArray(data.topics) ? data.topics : [],
-    };
+type VideoListResponse = {
+    videos: Video[];
 };
 
-const toYouTubeVideo = (docSnap: VideoSnapshot): Video => {
-    const data = docSnap.data() || {};
-    const youtubeVideoId = String(data.videoId || '').trim();
+const listVideos = async (source?: 'uploaded' | 'youtube') => {
+    const params = new URLSearchParams({ limit: '100' });
+    if (source) params.set('source', source);
 
-    return {
-        id: docSnap.id,
-        source: 'youtube',
-        videoId: youtubeVideoId,
-        youtubeVideoId,
-        title: data.title || 'Untitled YouTube video',
-        instructorCompany: data.instructorCompany || 'YouTube',
-        instructorName: data.instructorName || data.channelTitle || 'YouTube',
-        description:
-            data.description ||
-            'A curated YouTube lesson selected for CheFu Academy learners.',
-        videoURL: youtubeVideoId ? youtubeWatchUrl(youtubeVideoId) : '',
-        embedURL: youtubeVideoId ? youtubeEmbedUrl(youtubeVideoId) : undefined,
-        thumbnailURL: data.thumbnailURL || data.thumbnail || '',
-        uploadedBy: data.uploadedBy || data.channelTitle || 'YouTube',
-        uploadedAt: data.uploadedAt || data.createdAt || null,
-        category: data.category || 'Tech & Coding',
-        visibility: data.visibility || 'public',
-        level: data.level || 'beginner',
-        duration: Number(data.duration || 0),
-        views: Number(data.views || 0),
-        topics: Array.isArray(data.topics) ? data.topics : [],
-    };
+    const response = await fetch(
+        getApiUrl(`/api/academy/public/videos?${params.toString()}`),
+    );
+    if (!response.ok) {
+        throw new Error(`Failed to load videos (${response.status}).`);
+    }
+    return (await response.json()) as VideoListResponse;
 };
 
 export const uploadVideo = async (
@@ -93,112 +33,97 @@ export const uploadVideo = async (
     views: number = 0,
     topics: string[],
 ) => {
-    const user = auth.currentUser;
-    if (!user) throw new Error('Not authenticated');
+    const [videoBlob, thumbnailBlob] = await Promise.all([
+        fetch(videoUri).then((response) => {
+            if (!response.ok) throw new Error('Unable to read the selected video.');
+            return response.blob();
+        }),
+        fetch(thumbnailUri).then((response) => {
+            if (!response.ok) throw new Error('Unable to read the selected thumbnail.');
+            return response.blob();
+        }),
+    ]);
 
-    const videoId = uuidv4().toString();
-
-    // Upload video and thumbnail
-    const videoURL = await uploadFile(videoUri, `videos/${videoId}/video.mp4`);
-    const thumbnailURL = await uploadFile(
-        thumbnailUri,
-        `videos/${videoId}/thumbnail.jpg`,
+    const uploadResponse = await apiFetch(
+        '/api/academy/mobile/videos/upload-urls',
+        {
+            method: 'POST',
+            body: JSON.stringify({
+                videoContentType: videoBlob.type,
+                thumbnailContentType: thumbnailBlob.type,
+            }),
+        },
     );
+    const upload = (await uploadResponse.json()) as {
+        uploadId: string;
+        videoUploadUrl: string;
+        thumbnailUploadUrl: string;
+    };
 
-    // Save Firestore metadata
-    await setDoc(doc(db, 'videos', videoId), {
-        id: videoId,
-        title,
-        instructorCompany,
-        instructorName,
-        description,
-        videoURL,
-        thumbnailURL,
-        category,
-        uploadedBy: user.email,
-        uploadedAt: serverTimestamp(),
-        visibility,
-        duration,
-        level,
-        views,
-        topics,
-    });
+    const [videoUpload, thumbnailUpload] = await Promise.all([
+        fetch(upload.videoUploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': videoBlob.type },
+            body: videoBlob,
+        }),
+        fetch(upload.thumbnailUploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': thumbnailBlob.type },
+            body: thumbnailBlob,
+        }),
+    ]);
+    if (!videoUpload.ok || !thumbnailUpload.ok) {
+        throw new Error('Video storage upload failed.');
+    }
+
+    await apiFetch(
+        `/api/academy/mobile/videos/upload-urls/${encodeURIComponent(upload.uploadId)}/complete`,
+        {
+            method: 'POST',
+            body: JSON.stringify({
+                title,
+                instructorCompany,
+                instructorName,
+                description,
+                category,
+                visibility,
+                level,
+                duration,
+                views,
+                topics,
+            }),
+        },
+    );
 
     return true;
 };
 
-export const uploadFile = async (
-    fileOrUri: File | string,
-    path: string,
-): Promise<string> => {
-    const storage = getStorage();
-    const fileRef = ref(storage, path);
-
-    let data: Blob;
-
-    if (typeof fileOrUri === 'string') {
-        // It's a URI → fetch blob
-        const response = await fetch(fileOrUri);
-        data = await response.blob();
-    } else {
-        // It's already a File
-        data = fileOrUri;
-    }
-
-    await uploadBytes(fileRef, data);
-    return await getDownloadURL(fileRef);
-};
-
 export const fetchUploadedVideos = async (): Promise<Video[]> => {
-    const q = query(
-        collection(db, 'videos'),
-        where('visibility', '==', 'public'),
-        orderBy('uploadedAt', 'desc'),
-    );
-
-    const snap = await getDocs(q);
-    return snap.docs.map(toUploadedVideo);
+    const result = await listVideos('uploaded');
+    return result.videos;
 };
-export const fetchYTVideos = async (): Promise<Video[]> => {
-    const q = query(
-        collection(db, 'youTubeVideos'),
-        orderBy('createdAt', 'desc'),
-    );
 
-    const snap = await getDocs(q);
-    return snap.docs.map(toYouTubeVideo);
+export const fetchYTVideos = async (): Promise<Video[]> => {
+    const result = await listVideos('youtube');
+    return result.videos;
 };
 
 export const fetchAllPublicVideos = async (): Promise<Video[]> => {
-    const [uploadedVideos, youtubeVideos] = await Promise.all([
-        fetchUploadedVideos(),
-        fetchYTVideos(),
-    ]);
-
-    return [...uploadedVideos, ...youtubeVideos];
+    const result = await listVideos();
+    return result.videos;
 };
 
 export const fetchVideoById = async (
     videoId: string,
 ): Promise<Video | null> => {
-    try {
-        const uploadedVideoRef = doc(db, 'videos', videoId);
-        const uploadedVideoSnap = await getDoc(uploadedVideoRef);
-
-        if (uploadedVideoSnap.exists()) {
-            return toUploadedVideo(uploadedVideoSnap);
-        }
-
-        const youtubeVideoRef = doc(db, 'youTubeVideos', videoId);
-        const youtubeVideoSnap = await getDoc(youtubeVideoRef);
-
-        if (youtubeVideoSnap.exists()) {
-            return toYouTubeVideo(youtubeVideoSnap);
-        }
-
-        return null;
-    } catch (error) {
-        console.error('Error fetching video:', error);
-        return null;
+    const response = await fetch(
+        getApiUrl(
+            `/api/academy/public/videos/${encodeURIComponent(videoId)}`,
+        ),
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+        throw new Error(`Failed to fetch video (${response.status}).`);
     }
+    return (await response.json()) as Video;
 };

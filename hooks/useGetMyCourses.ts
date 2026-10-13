@@ -1,57 +1,40 @@
-import { db } from '@/lib/firebase';
+import { useAuthUser } from '@/hooks/useAuthUser';
+import { apiFetch } from '@/lib/api-client';
 import { Course } from '@/types/course';
-import { User as FirebaseUser } from 'firebase/auth';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+
+type CourseListResponse = { courses: Course[] };
 
 export const useGetMyCourse = () => {
+    const { user, loading: authLoading } = useAuthUser();
     const [courses, setCourses] = useState<Course[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const fetchCourses = async (user: FirebaseUser) => {
+    const fetchCourses = useCallback(async () => {
+        if (!user) {
+            setCourses([]);
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
         try {
-            const q = query(
-                collection(db, 'course'),
-                where('createdBy', '==', user.email),
+            const response = await apiFetch(
+                '/api/academy/mobile/courses/my?limit=100',
             );
-            const snapshot = await getDocs(q);
-
-            const fetchedCourses: Course[] = snapshot.docs.map((doc) => {
-                const data = doc.data();
-                return {
-                    id: doc.id,
-                    docId: doc.id,
-                    banner_image: data.banner_image || '',
-                    category: data.category || '',
-                    chapters: data.chapters || [],
-                    courseTitle: data.courseTitle || '',
-                    createdBy: data.createdBy || '',
-                    createdOn: data.createdOn,
-                    description: data.description || '',
-                    enrolled: data.enrolled || false,
-                    flashcards: data.flashcards || [],
-                    qa: data.qa || [],
-                    quiz: data.quiz || [],
-                    completedChapter: data.completedChapter || [],
-                    originalCourseId: data.originalCourseId,
-                    lastStudiedAt: data.lastStudiedAt,
-                    lastStudiedChapterIndex: data.lastStudiedChapterIndex,
-                    lastStudiedContentIndex: data.lastStudiedContentIndex,
-                    lastStudiedChapterName: data.lastStudiedChapterName || '',
-                    lastStudiedTopic: data.lastStudiedTopic || '',
-                    averageRating: data.averageRating || 0,
-                    reviewCount: data.reviewCount || 0,
-                    completedChapterEvents: data.completedChapterEvents || [],
-                };
-            });
-
-            setCourses(fetchedCourses);
+            const result = (await response.json()) as CourseListResponse;
+            setCourses(result.courses);
         } catch (error) {
             console.error('Error fetching courses:', error);
+            setCourses([]);
         } finally {
             setLoading(false);
         }
-    };
+    }, [user]);
+
+    useEffect(() => {
+        if (!authLoading) void fetchCourses();
+    }, [authLoading, fetchCourses]);
 
     return { courses, loading, setLoading, fetchCourses };
 };

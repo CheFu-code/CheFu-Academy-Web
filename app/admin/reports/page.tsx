@@ -1,7 +1,6 @@
 'use client';
 
-import { db } from '@/lib/firebase'; // your firebase config
-import { collection, getDocs } from 'firebase/firestore';
+import { apiFetch } from '@/lib/api-client';
 import { useEffect, useState } from 'react';
 import HeaderAndSearch from '../_components/UI/HeaderAndSearch';
 import ReportsTable from '../_components/UI/ReportsTable';
@@ -16,21 +15,16 @@ const Reports = () => {
     useEffect(() => {
         const fetchReports = async () => {
             try {
-                const snapshot = await getDocs(collection(db, 'reports'));
-                const data = snapshot.docs.map((doc) => {
-                    const d = doc.data();
-                    return {
-                        id: doc.id,
-                        title: d.title,
-                        reportedBy: d.reportedBy,
-                        reason: d.reason,
-                        reportedAt: d.reportedAt
-                            ? d.reportedAt.toDate().toLocaleString()
+                const response = await apiFetch('/api/academy/mobile/admin/reports');
+                const result = (await response.json()) as { reports: Report[] };
+                setReports(
+                    result.reports.map((report) => ({
+                        ...report,
+                        reportedAt: report.reportedAt
+                            ? new Date(report.reportedAt).toLocaleString()
                             : '',
-                    };
-                }) as Report[];
-
-                setReports(data);
+                    })),
+                );
             } catch (error) {
                 console.error('Error fetching reports:', error);
             } finally {

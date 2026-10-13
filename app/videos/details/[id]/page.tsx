@@ -1,17 +1,9 @@
 'use client';
 
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
 import { fetchVideoById } from '@/services/videoService';
 import { Video } from '@/types/video';
-import {
-    doc,
-    getDoc,
-    increment,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-} from 'firebase/firestore';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -48,14 +40,16 @@ const VideoDetailsPage = () => {
     }, [fetchVideoDetails, videoId]);
 
     useEffect(() => {
-        if (!user?.email || !video?.id) return;
-
-        const ref = doc(db, 'users', user.email, 'enrollments', video.id);
+        const currentVideoId = video?.id;
+        if (!user?.email || !currentVideoId) return;
 
         const checkEnrollment = async () => {
             try {
-                const docSnap = await getDoc(ref);
-                setEnrolled(docSnap.exists());
+                const response = await apiFetch(
+                    `/api/academy/mobile/videos/${encodeURIComponent(currentVideoId)}/enrollment`,
+                );
+                const result = (await response.json()) as { enrolled: boolean };
+                setEnrolled(result.enrolled);
             } catch (err) {
                 console.error('Failed to check enrollment:', err);
             }
@@ -77,23 +71,13 @@ const VideoDetailsPage = () => {
                 toast.error('Video is missing its ID.');
                 return;
             }
-            const ref = doc(db, 'users', user.email, 'enrollments', video.id);
-            await setDoc(ref, {
-                videoId: video.id,
-                title: video.title,
-                thumbnailURL: video.thumbnailURL,
-                enrolledAt: serverTimestamp(),
-            });
-
-            const videoCollection =
-                video.source === 'youtube' ? 'youTubeVideos' : 'videos';
-            const videoRef = doc(db, videoCollection, video.id);
-            await updateDoc(videoRef, { views: increment(1) }).catch((err) => {
-                console.error('Failed to increment video views:', err);
-            });
-
+            const response = await apiFetch(
+                `/api/academy/mobile/videos/${encodeURIComponent(video.id)}/enroll`,
+                { method: 'POST' },
+            );
+            const result = (await response.json()) as { views: number };
             setVideo((prev) =>
-                prev ? { ...prev, views: (prev.views || 0) + 1 } : prev,
+                prev ? { ...prev, views: result.views } : prev,
             );
             setEnrolled(true);
             toast.success('Successfully enrolled!');

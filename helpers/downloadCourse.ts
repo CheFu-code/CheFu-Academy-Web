@@ -1,6 +1,5 @@
 import type { Course } from '@/types/course';
 import { getApiUrl } from '@/lib/api-url';
-import getUserToken from '@/lib/getToken';
 import {
     AlignmentType,
     BorderStyle,
@@ -91,13 +90,8 @@ export const downloadCoursePDF_Office = async (course: Course) => {
     if (!course?.id) return downloadCoursePDF_Legacy(course);
 
     try {
-        const token = await getUserToken();
-        if (!token) return downloadCoursePDF_Legacy(course);
-
         const response = await fetch(getApiUrl(`/courses/${course.id}/export/pdf`), {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
+            credentials: 'include',
         });
 
         if (!response.ok) {

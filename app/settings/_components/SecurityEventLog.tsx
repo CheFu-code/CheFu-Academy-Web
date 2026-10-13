@@ -2,23 +2,16 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { auth, db } from '@/lib/firebase';
-import {
-    collection,
-    limit,
-    onSnapshot,
-    orderBy,
-    query,
-    Timestamp,
-} from 'firebase/firestore';
+import { getApiUrl } from '@/lib/api-url';
 import { Activity, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 type SecurityEvent = {
-    id: string;
-    type: string;
-    createdAt?: Timestamp;
-    details?: Record<string, unknown>;
+    eventId: string;
+    eventType: string;
+    label: string;
+    deviceName?: string;
+    createdAt: string;
 };
 
 const eventLabels: Record<string, string> = {
@@ -34,34 +27,30 @@ export default function SecurityEventLog() {
     const [events, setEvents] = useState<SecurityEvent[]>([]);
 
     useEffect(() => {
-        let unsubscribeEvents: (() => void) | undefined;
-
-        const unsubscribeAuth = auth.onAuthStateChanged(user => {
-            unsubscribeEvents?.();
-            if (!user?.email) {
-                setEvents([]);
-                return;
+        let active = true;
+        const fetchEvents = async () => {
+            try {
+                const response = await fetch(getApiUrl('/auth/activity'), {
+                    credentials: 'include',
+                });
+                if (!response.ok) {
+                    throw new Error(`Failed to load security activity (${response.status}).`);
+                }
+                const data = (await response.json()) as SecurityEvent[];
+                if (active) setEvents(data.slice(0, 8));
+            } catch (error) {
+                console.error('Failed to load security activity:', error);
             }
-
-            const eventsQuery = query(
-                collection(db, 'users', user.email, 'securityEvents'),
-                orderBy('createdAt', 'desc'),
-                limit(8),
-            );
-
-            unsubscribeEvents = onSnapshot(eventsQuery, snapshot => {
-                setEvents(
-                    snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...(doc.data() as Omit<SecurityEvent, 'id'>),
-                    })),
-                );
-            });
-        });
+        };
+        const refreshOnFocus = () => void fetchEvents();
+        void fetchEvents();
+        const intervalId = window.setInterval(fetchEvents, 30_000);
+        window.addEventListener('focus', refreshOnFocus);
 
         return () => {
-            unsubscribeAuth();
-            unsubscribeEvents?.();
+            active = false;
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', refreshOnFocus);
         };
     }, []);
 
@@ -82,16 +71,16 @@ export default function SecurityEventLog() {
 
                 {events.map(event => (
                     <div
-                        key={event.id}
+                        key={event.eventId}
                         className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
                     >
                         <div className="flex items-center gap-3">
                             <div className="flex size-9 items-center justify-center rounded-md bg-background">
-                                <EventIcon type={event.type} />
+                                <EventIcon type={event.eventType} />
                             </div>
                             <div>
                                 <p className="text-sm font-medium">
-                                    {eventLabels[event.type] || event.type}
+                                    {event.label || eventLabels[event.eventType] || event.eventType}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
                                     {formatEventDate(event.createdAt)}
@@ -99,7 +88,7 @@ export default function SecurityEventLog() {
                             </div>
                         </div>
                         <Badge variant="outline">
-                            {String(event.details?.provider || 'account')}
+                            {event.deviceName || 'account'}
                         </Badge>
                     </div>
                 ))}
@@ -118,10 +107,10 @@ function EventIcon({ type }: { type: string }) {
     return <ShieldCheck className="size-4 text-cyan-500" />;
 }
 
-function formatEventDate(value?: Timestamp) {
-    if (!value?.toDate) return 'Just now';
-
-    return value.toDate().toLocaleString(undefined, {
+function formatEventDate(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Date unavailable';
+    return date.toLocaleString(undefined, {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',

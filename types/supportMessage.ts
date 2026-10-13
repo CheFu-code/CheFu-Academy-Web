@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+type SerializedDate = Date | string | number | null;
 
 /* -------------------- Chat Typing State -------------------- */
 export type ChatTypingStatus = {
@@ -15,10 +15,10 @@ export type SupportChat = {
     status: 'open' | 'closed';
 
     lastMessage: string;
-    lastMessageAt: Timestamp;
+    lastMessageAt: SerializedDate;
 
-    createdAt: Timestamp;
-    updatedAt: Timestamp;
+    createdAt: SerializedDate;
+    updatedAt: SerializedDate;
 
     userOnline: boolean;
     adminOnline: boolean;
@@ -30,6 +30,6 @@ export type SupportChat = {
 export type SupportMessage = {
     sender: 'user' | 'admin';
     text: string;
-    createdAt: Timestamp;
+    createdAt: SerializedDate;
     read: boolean;
 };

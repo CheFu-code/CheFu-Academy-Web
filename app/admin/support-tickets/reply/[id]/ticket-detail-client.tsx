@@ -2,17 +2,8 @@
 
 import TicketDetailUI from '@/app/admin/_components/UI/Tickets/TicketDetailUI';
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { db } from '@/lib/firebase';
-import { TicketStatus } from '@/types/supportTicket';
+import { apiFetch } from '@/lib/api-client';
 import { autosize, charLimit, Props } from '@/utils/ticketDetailsUtils';
-import { computeOverdue } from '@/utils/ticketSLA';
-import {
-    addDoc,
-    collection,
-    doc,
-    serverTimestamp,
-    updateDoc,
-} from 'firebase/firestore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -79,41 +70,13 @@ export default function TicketDetailClient({ ticket, action }: Props) {
         setErrorMsg(null);
 
         try {
-            const messagesColRef = collection(
-                db,
-                'support-tickets',
-                ticket.id,
-                'messages',
+            await apiFetch(
+                `/api/academy/mobile/support-tickets/${encodeURIComponent(ticket.id)}/replies`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({ text }),
+                },
             );
-
-            await addDoc(messagesColRef, {
-                text,
-                senderId: user.uid,
-                senderEmail: user.email ?? '',
-                senderName: user.fullname ?? 'Agent',
-                direction: 'agent', // or 'user' if you reuse this UI for end-user replies
-                createdAtServer: serverTimestamp(),
-                // isInternal: false,
-            });
-
-            const ticketRef = doc(db, 'support-tickets', ticket.id);
-            const nextStatus: TicketStatus = ticket.status;
-            const now = new Date(); // no change
-            const nowISO = now.toISOString();
-            const nextOverdue = computeOverdue(
-                nowISO,
-                ticket.priority,
-                nextStatus,
-            );
-
-            await updateDoc(ticketRef, {
-                status: nextStatus,
-                updatedAtServer: serverTimestamp(),
-                updatedAt: new Date(), // optional if you already show serverTimestamp in UI
-                overdue: nextOverdue,
-                hasAgentReply: true,
-                lastAgentReplyAt: now,
-            });
 
             toast.success('Reply sent');
             setReplyText('');

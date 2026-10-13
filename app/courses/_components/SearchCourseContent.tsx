@@ -19,18 +19,8 @@ const SearchCourseContent = () => {
         const fetchFilteredCourses = async () => {
             setLoading(true);
             try {
-                const allCourses = await fetchSearchedCourses();
-                const filtered = allCourses.filter(
-                    (c) =>
-                        c.category
-                            ?.toLowerCase()
-                            .includes(query.toLowerCase()) ||
-                        c.courseTitle
-                            ?.toLowerCase()
-                            .includes(query.toLowerCase()),
-                );
-
-                setCourses(filtered);
+                const results = await fetchSearchedCourses(query);
+                setCourses(results);
             } catch (err) {
                 console.error('Failed to fetch courses:', err);
             } finally {

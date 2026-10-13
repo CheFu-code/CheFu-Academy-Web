@@ -1,6 +1,7 @@
 import { VideoCategoryValues } from "@/constants/Options";
-import { FieldValue, Timestamp } from "firebase/firestore";
 import { z } from "zod";
+
+type SerializedDate = Date | string | number | null;
 
 // ------------------
 // Zod schema
@@ -18,7 +19,7 @@ export const VideoSchema = z.object({
     embedURL: z.string().url("Must be a valid URL").optional(),
     thumbnailURL: z.string().url("Must be a valid URL"),
     uploadedBy: z.string(),
-    uploadedAt: z.any(), // required
+    uploadedAt: z.union([z.date(), z.string(), z.number(), z.null()]),
     category: z.enum(VideoCategoryValues, { message: "Category is required" }),
     visibility: z.enum(["public", "private"]),
     level: z.string().min(1, "Level is required"),
@@ -78,7 +79,7 @@ export type UserReviews = {
     userId: string;
     rating: number; // 1 to 5
     comment: string;
-    createdAt: Timestamp | FieldValue;
+    createdAt: SerializedDate;
     username: string;
     avatar: string;
 };

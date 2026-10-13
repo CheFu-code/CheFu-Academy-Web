@@ -1,18 +1,7 @@
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { auth, db } from '@/lib/firebase';
+import { getApiUrl } from '@/lib/api-url';
+import { apiFetch } from '@/lib/api-client';
 import { UserReviews, Video } from '@/types/video';
-import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    onSnapshot,
-    orderBy,
-    query,
-    QueryDocumentSnapshot,
-    serverTimestamp,
-    updateDoc,
-} from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import Header from './Header';
@@ -41,23 +30,33 @@ const Reviews = ({ video }: ReviewsProps) => {
     const hasReviewed = () =>
         user?.uid ? reviews.some((rev) => rev.userId === user.uid) : false;
 
-    // fetch reviews
     useEffect(() => {
-        if (!video || !video.id) return;
-
-        const reviewsRef = collection(db, 'videos', video.id, 'reviews');
-        const q = query(reviewsRef, orderBy('createdAt', 'desc'));
-
-        const unsub = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map((doc: QueryDocumentSnapshot) => ({
-                id: doc.id,
-                ...doc.data(),
-            })) as UserReviews[];
-            setReviews(data);
-        });
-
-        return () => unsub();
-    }, [video]);
+        if (!video?.id) return;
+        let active = true;
+        const loadReviews = async () => {
+            try {
+                const response = await fetch(
+                    getApiUrl(
+                        `/api/academy/public/videos/${encodeURIComponent(video.id!)}/reviews`,
+                    ),
+                );
+                if (!response.ok) throw new Error(`Request failed (${response.status}).`);
+                const result = (await response.json()) as {
+                    reviews: UserReviews[];
+                };
+                if (active) setReviews(result.reviews);
+            } catch (error) {
+                console.error('Failed to load video reviews:', error);
+                if (active) toast.error('Failed to load reviews.');
+            }
+        };
+        void loadReviews();
+        const timer = window.setInterval(loadReviews, 30_000);
+        return () => {
+            active = false;
+            window.clearInterval(timer);
+        };
+    }, [video?.id]);
 
     const handleSubmitReview = async () => {
         if (!video?.id) return toast.warning('Invalid video');
@@ -71,22 +70,15 @@ const Reviews = ({ video }: ReviewsProps) => {
 
         setLoading(true);
         try {
-            const reviewsCollection = collection(
-                db,
-                'videos',
-                video.id,
-                'reviews',
+            const response = await apiFetch(
+                `/api/academy/mobile/videos/${encodeURIComponent(video.id)}/reviews`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({ rating, comment: reviewText.trim() }),
+                },
             );
-            await addDoc(reviewsCollection, {
-                userId: user.uid,
-                username: user.fullname,
-                email: user.email || '',
-                avatar: user.profilePicture || '',
-                rating,
-                comment: reviewText.trim(),
-                videoId: video.id,
-                createdAt: serverTimestamp(),
-            });
+            const result = (await response.json()) as { review: UserReviews };
+            setReviews((current) => [result.review, ...current]);
 
             setReviewText('');
             setRating(0);
@@ -102,8 +94,8 @@ const Reviews = ({ video }: ReviewsProps) => {
 
     const handleEditReview = async () => {
         if (!video || !editingReviewId) return;
-        if (user?.uid !== auth.currentUser?.uid) {
-            toast.warning('You can only edit your own reviews');
+        if (!user?.uid) {
+            toast.warning('You can only edit your own review');
             return;
         }
         setLoading(true);
@@ -125,20 +117,21 @@ const Reviews = ({ video }: ReviewsProps) => {
                 setLoading(false);
                 return;
             }
+            await apiFetch(
+                `/api/academy/mobile/videos/${encodeURIComponent(video.id)}/reviews/${encodeURIComponent(editingReviewId)}`,
+                {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        rating,
+                        comment: reviewText.trim(),
+                    }),
+                },
+            );
             const updatedReview = {
                 rating,
                 comment: reviewText.trim(),
-                updatedAt: serverTimestamp(),
+                updatedAt: new Date(),
             };
-
-            const reviewRef = doc(
-                db,
-                'videos',
-                video.id,
-                'reviews',
-                editingReviewId,
-            );
-            await updateDoc(reviewRef, updatedReview);
 
             // update local state
             setReviews((prev) =>
@@ -180,15 +173,10 @@ const Reviews = ({ video }: ReviewsProps) => {
 
         setLoading(true);
         try {
-            const reviewRef = doc(
-                db,
-                'videos',
-                video.id,
-                'reviews',
-                editingReviewId,
+            await apiFetch(
+                `/api/academy/mobile/videos/${encodeURIComponent(video.id)}/reviews/${encodeURIComponent(editingReviewId)}`,
+                { method: 'DELETE' },
             );
-
-            await deleteDoc(reviewRef);
 
             // update local state
             setReviews((prev) =>

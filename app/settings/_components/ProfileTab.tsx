@@ -1,16 +1,7 @@
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { useSignOut } from '@/hooks/useSignOut';
-import { db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
 import countryList from 'react-select-country-list';
-import {
-    collection,
-    doc,
-    getDocs,
-    query,
-    updateDoc,
-    where,
-    writeBatch,
-} from 'firebase/firestore';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import ProfileTabUI from './UI/ProfileTabUI';
@@ -44,8 +35,10 @@ const ProfileTab = () => {
         setSaving(field);
 
         try {
-            const userRef = doc(db, 'users', user.email);
-            await updateDoc(userRef, { [field]: value.trim() });
+            await apiFetch('/api/academy/mobile/me', {
+                method: 'PATCH',
+                body: JSON.stringify({ [field]: value.trim() }),
+            });
 
             window.location.reload();
             toast.success(
@@ -78,10 +71,12 @@ const ProfileTab = () => {
         setSaving('country');
 
         try {
-            const userRef = doc(db, 'users', user.email);
-            await updateDoc(userRef, {
-                countryCode: countryCode.trim(),
-                country: country.trim(),
+            await apiFetch('/api/academy/mobile/me', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    countryCode: countryCode.trim(),
+                    country: country.trim(),
+                }),
             });
 
             window.location.reload();
@@ -103,9 +98,9 @@ const ProfileTab = () => {
 
         setSaving(savingKey);
         try {
-            await updateDoc(doc(db, 'users', user.email), {
-                ...payload,
-                updatedAt: new Date(),
+            await apiFetch('/api/academy/mobile/me', {
+                method: 'PATCH',
+                body: JSON.stringify(payload),
             });
             toast.success(successMessage);
             window.location.reload();
@@ -122,18 +117,8 @@ const ProfileTab = () => {
 
         setSaving('export');
         try {
-            const coursesSnapshot = await getDocs(
-                query(collection(db, 'course'), where('createdBy', '==', user.email)),
-            );
-            const courses = coursesSnapshot.docs.map(courseDoc => ({
-                id: courseDoc.id,
-                ...courseDoc.data(),
-            }));
-            const exportData = {
-                exportedAt: new Date().toISOString(),
-                profile: user,
-                courses,
-            };
+            const response = await apiFetch('/api/academy/mobile/me/export');
+            const exportData = await response.json();
             const blob = new Blob([JSON.stringify(exportData, null, 2)], {
                 type: 'application/json',
             });
@@ -168,14 +153,9 @@ const ProfileTab = () => {
 
         setSaving('clearProgress');
         try {
-            const coursesSnapshot = await getDocs(
-                query(collection(db, 'course'), where('createdBy', '==', user.email)),
-            );
-            const batch = writeBatch(db);
-            coursesSnapshot.docs.forEach(courseDoc => {
-                batch.update(courseDoc.ref, { completedChapter: [] });
+            await apiFetch('/courses/my/progress/reset', {
+                method: 'POST',
             });
-            await batch.commit();
             toast.success('Learning progress cleared.');
         } catch (error) {
             console.error('Failed to clear learning progress:', error);

@@ -3,9 +3,7 @@
 import { generateCourse, generateTopics } from '@/config/AIModel';
 import Prompt from '@/constants/Prompt';
 import React, { useEffect, useState } from 'react';
-import { useAuthUser } from './useAuthUser';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { apiFetch } from '@/lib/api-client';
 import { setDesktopProgress } from '@/lib/desktop-notify';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -15,7 +13,6 @@ export const useGenerateTopic = (
     setUserInput: React.Dispatch<React.SetStateAction<string>>,
 ) => {
     const router = useRouter();
-    const { user } = useAuthUser();
     const [topics, setTopics] = useState<string[]>([]);
     const [generatingTopic, setGeneratingTopic] = useState(false);
     const [generatingCourse, setGeneratingCourse] = useState(false);
@@ -172,26 +169,27 @@ export const useGenerateTopic = (
                 return;
             }
 
-            const emailSafe = user?.email.replace(/[@.]/g, '_');
-            const docId = emailSafe + '_' + Date.now().toString();
             updateGenerationProgress(
                 94,
                 'Saving your course to your library...',
                 3,
             );
-            await Promise.all(
-                coursesArray.map(async (course) => {
-                    await setDoc(doc(db, 'course', docId), {
-                        ...course,
-                        createdOn: new Date(),
-                        createdBy: user?.email,
-                        docId: docId,
+            const createdCourses = await Promise.all(
+                coursesArray.map(async course => {
+                    const response = await apiFetch('/api/academy/mobile/courses', {
+                        method: 'POST',
+                        body: JSON.stringify(course),
                     });
+                    return (await response.json()) as {
+                        course: { id: string };
+                    };
                 }),
             );
 
             updateGenerationProgress(100, 'Course ready. Opening it now...', 4);
-            router.replace(`/courses/my-courses/course-view/${docId}`);
+            router.replace(
+                `/courses/my-courses/course-view/${createdCourses[0].course.id}`,
+            );
             toast.success('Course created successfully!');
         } catch (e: unknown) {
             console.log('failed course', (e as Error).message);

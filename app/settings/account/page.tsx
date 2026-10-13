@@ -1,10 +1,7 @@
 'use client';
 
 import { useAuthUser } from '@/hooks/useAuthUser';
-import { getApiUrl } from '@/lib/api-url';
-import { auth, storage } from '@/lib/firebase';
-import { updateProfile } from 'firebase/auth';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { apiFetch } from '@/lib/api-client';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import AccountUI from '../_components/UI/AccountUI';
@@ -38,21 +35,13 @@ const Account = () => {
 
         setChanging(true);
         try {
-            const avatarRef = ref(
-                storage,
-                `avatars/${user.uid}.${file.name.split('.').pop()}`,
-            );
-
-            await uploadBytes(avatarRef, file);
-            const photoURL = await getDownloadURL(avatarRef);
-
-            await syncChefuProfilePicture(photoURL);
-
-            if (auth.currentUser) {
-                await updateProfile(auth.currentUser, {
-                    photoURL,
-                });
-            }
+            await apiFetch('/auth/profile-picture', {
+                method: 'POST',
+                body: JSON.stringify({
+                    imageBase64: await readFileAsDataUrl(file),
+                    contentType: file.type,
+                }),
+            });
 
             toast.success('Profile picture updated!');
             window.location.reload();
@@ -88,30 +77,18 @@ const Account = () => {
 
 export default Account;
 
-async function syncChefuProfilePicture(photoURL: string) {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'x-chefu-app': 'academy',
-    };
-
-    if (auth.currentUser) {
-        headers.Authorization = `Bearer ${await auth.currentUser.getIdToken(true)}`;
-    }
-
-    const response = await fetch(getApiUrl('/auth/profile'), {
-        method: 'PATCH',
-        credentials: 'include',
-        headers,
-        body: JSON.stringify({ profilePicture: photoURL }),
+function readFileAsDataUrl(file: File) {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result !== 'string') {
+                reject(new Error('Unable to read the selected image.'));
+                return;
+            }
+            resolve(reader.result);
+        };
+        reader.onerror = () =>
+            reject(reader.error || new Error('Unable to read the selected image.'));
+        reader.readAsDataURL(file);
     });
-
-    if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-            | { error?: string; message?: string; requestId?: string }
-            | null;
-        const requestId = data?.requestId ? ` Request ID: ${data.requestId}` : '';
-        throw new Error(
-            `${data?.message || data?.error || 'Unable to sync profile picture.'}${requestId}`,
-        );
-    }
 }

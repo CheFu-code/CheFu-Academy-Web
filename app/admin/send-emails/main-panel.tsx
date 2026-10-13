@@ -4,11 +4,10 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useDropzone } from "react-dropzone";
-import { collection, getDocs } from "firebase/firestore";
+import { apiFetch } from "@/lib/api-client";
 import { Rocket } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { db } from "@/lib/firebase";
 import { AudienceTab } from "./audience-tab";
 import { ComposeTab } from "./compose-tab";
 import { PreviewTab } from "./preview-tab";
@@ -45,31 +44,30 @@ export function MainPanel() {
         const loadAudienceUsers = async () => {
             setLoadingAudienceUsers(true);
             try {
-                const snap = await getDocs(collection(db, "users"));
+                const response = await apiFetch("/api/academy/mobile/admin/users");
+                const result = (await response.json()) as {
+                    users: Array<AudienceUser & { id: string }>;
+                };
                 if (!mounted) return;
-                const users = snap.docs
-                    .map((docSnap) => {
-                        const data = docSnap.data() as Partial<AudienceUser>;
-                        const email =
+                const users = result.users
+                    .map((data) => ({
+                        id: data.id,
+                        email:
                             typeof data.email === "string" && data.email.includes("@")
                                 ? data.email
-                                : docSnap.id;
-                        return {
-                            id: docSnap.id,
-                            email,
-                            member: data.member === true,
-                            subscriptionStatus:
-                                typeof data.subscriptionStatus === "string"
-                                    ? data.subscriptionStatus
-                                    : "",
-                            emailPreferences: data.emailPreferences,
-                        };
-                    })
+                                : data.id,
+                        member: data.member === true,
+                        subscriptionStatus:
+                            typeof data.subscriptionStatus === "string"
+                                ? data.subscriptionStatus
+                                : "",
+                        emailPreferences: data.emailPreferences,
+                    }))
                     .filter((u) => typeof u.email === "string" && u.email.includes("@"));
                 setAudienceUsers(users);
             } catch (error) {
                 console.error("Failed to load users for email audience:", error);
-                toast.error("Unable to load audience from Firestore.");
+                toast.error("Unable to load the email audience.");
             } finally {
                 if (mounted) {
                     setLoadingAudienceUsers(false);

@@ -33,7 +33,6 @@ import {
 } from '@/constants/Options';
 import { uploadVideo } from '@/services/videoService';
 import { Video } from '@/types/video';
-import { Timestamp } from 'firebase/firestore';
 import { Loader, PlusIcon, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -63,7 +62,7 @@ const UploadVideoPage = ({}) => {
             videoURL: '',
             thumbnailURL: '',
             uploadedBy: '',
-            uploadedAt: Timestamp.now(),
+            uploadedAt: new Date(),
             category: '',
             visibility: 'public',
             level: 'beginner',
